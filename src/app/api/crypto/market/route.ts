@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 
+// Force dynamic rendering - no caching
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // ========================================
 // 📊 DEEPTRADE PRO - MARKET DATA API
-// CoinGecko Integration for Real Prices
+// Real-time prices from Binance & CoinGecko
 // ========================================
 
 // CoinGecko ID mapping
@@ -133,7 +137,12 @@ export async function GET() {
   try {
     const response = await fetch(
       'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1',
-      { next: { revalidate: 0 } }
+      {
+        cache: 'no-store',
+        headers: {
+          'Accept': 'application/json',
+        },
+      }
     );
 
     if (response.ok) {
@@ -186,13 +195,23 @@ async function tryBinanceAPI() {
   try {
     const response = await fetch(
       'https://api.binance.com/api/v3/ticker/24hr',
-      { next: { revalidate: 0 } }
+      {
+        cache: 'no-store',
+        headers: {
+          'Accept': 'application/json',
+        },
+      }
     );
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.log('Binance API failed:', response.status);
+      return null;
+    }
 
     const data = await response.json();
     if (!Array.isArray(data) || data.length === 0) return null;
+
+    console.log('Binance API success! Got', data.length, 'pairs');
 
     // Filter USDT pairs
     const usdtPairs = data.filter((t: { symbol: string }) =>
