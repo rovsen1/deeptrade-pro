@@ -1,0 +1,263 @@
+// This is your Prisma schema file,
+// DeepTrade Pro - PostgreSQL Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// KULLANICI TABLOSU
+// ========================================
+model User {
+  id                    String   @id @default(cuid())
+  username              String   @unique
+  email                 String?  @unique
+  telegramBotToken      String?
+  telegramChatId        String?
+  notificationsEnabled  Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  // İlişkiler
+  trades        Trade[]
+  tradeHistory  TradeHistory[]
+  backtests     Backtest[]
+  patterns      DetectedPattern[]
+  alarms        AdvancedAlarm[]
+  
+  @@map("users")
+}
+
+// ========================================
+// AKTİF İŞLEMLER
+// ========================================
+model Trade {
+  id            String   @id @default(cuid())
+  userId        String
+  
+  // İşlem bilgileri
+  symbol        String
+  type          String   // LONG or SHORT
+  signalType    String   // scalp or swing
+  signalStrength Int     // 0-100
+  strategy      String   @default("default")
+  
+  // Fiyat bilgileri
+  entryPrice    Float
+  stopLoss      Float
+  takeProfit    Float
+  currentPrice  Float    @default(0)
+  
+  // Sonuç
+  status        String   @default("ACTIVE")
+  pnl           Float    @default(0)
+  pnlPercent    Float    @default(0)
+  
+  // Sinyal nedenleri
+  reasons       String
+  
+  // Zaman bilgileri
+  timeframe     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  closedAt      DateTime?
+  
+  // İlişki
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([symbol])
+  @@index([status])
+  @@map("trades")
+}
+
+// ========================================
+// İŞLEM GEÇMİŞİ
+// ========================================
+model TradeHistory {
+  id            String   @id @default(cuid())
+  userId        String
+  
+  // İşlem bilgileri
+  symbol        String
+  type          String
+  signalType    String
+  signalStrength Int
+  strategy      String   @default("default")
+  
+  // Fiyat bilgileri
+  entryPrice    Float
+  exitPrice     Float
+  stopLoss      Float
+  takeProfit    Float
+  
+  // Sonuç
+  result        String
+  pnl           Float
+  pnlPercent    Float
+  
+  // Sinyal nedenleri
+  reasons       String
+  
+  // Süre
+  duration      Int
+  
+  // Zaman bilgileri
+  openedAt      DateTime
+  closedAt      DateTime
+  
+  // İlişki
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([symbol])
+  @@index([result])
+  @@map("trade_history")
+}
+
+// ========================================
+// BACKTEST SONUÇLARI
+// ========================================
+model Backtest {
+  id            String   @id @default(cuid())
+  userId        String
+  
+  // Backtest parametreleri
+  strategy      String
+  symbol        String
+  timeframe     String
+  startDate     DateTime
+  endDate       DateTime
+  
+  // Parametreler
+  parameters    String
+  
+  // Sonuçlar
+  totalTrades   Int      @default(0)
+  winningTrades Int      @default(0)
+  losingTrades  Int      @default(0)
+  winRate       Float    @default(0)
+  
+  // Kar/Zarar
+  totalPnl      Float    @default(0)
+  totalPnlPercent Float  @default(0)
+  avgWin        Float    @default(0)
+  avgLoss       Float    @default(0)
+  maxWin        Float    @default(0)
+  maxLoss       Float    @default(0)
+  
+  // Risk metrikleri
+  maxDrawdown   Float    @default(0)
+  sharpeRatio   Float    @default(0)
+  profitFactor  Float    @default(0)
+  avgTradeDuration Int   @default(0)
+  
+  // Trade listesi
+  trades        String
+  
+  // Zaman
+  createdAt     DateTime @default(now())
+  
+  // İlişki
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([strategy])
+  @@index([symbol])
+  @@map("backtests")
+}
+
+// ========================================
+// PATTERN TANIMA SONUÇLARI
+// ========================================
+model DetectedPattern {
+  id            String   @id @default(cuid())
+  userId        String?
+  
+  // Pattern bilgileri
+  symbol        String
+  pattern       String
+  patternType   String
+  confidence    Float
+  
+  // Seviyeler
+  entryPrice    Float
+  targetPrice   Float
+  stopLossPrice Float
+  
+  // Pattern detayları
+  neckline      Float?
+  breakoutLevel Float?
+  patternPoints String
+  
+  // Durum
+  status        String   @default("ACTIVE")
+  result        String?
+  
+  // Zaman
+  timeframe     String
+  detectedAt    DateTime @default(now())
+  completedAt   DateTime?
+  
+  // İlişki
+  user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([symbol])
+  @@index([pattern])
+  @@index([status])
+  @@map("detected_patterns")
+}
+
+// ========================================
+// GELİŞMİŞ ALARMLAR
+// ========================================
+model AdvancedAlarm {
+  id            String   @id @default(cuid())
+  userId        String
+  
+  // Alarm bilgileri
+  symbol        String
+  alarmType     String
+  
+  // Fiyat alarmları
+  targetPrice   Float?
+  direction     String?
+  
+  // İndikatör alarmları
+  indicator     String?
+  condition     String?
+  value         Float?
+  
+  // Pattern alarmları
+  patternType   String?
+  
+  // Whale alarmları
+  minVolume     Float?
+  
+  // Bildirim
+  notifyTelegram Boolean @default(true)
+  notifyEmail   Boolean  @default(false)
+  notifyPush    Boolean  @default(false)
+  
+  // Durum
+  triggered     Boolean  @default(false)
+  triggeredAt   DateTime?
+  
+  // Zaman
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // İlişki
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([symbol])
+  @@index([alarmType])
+  @@index([triggered])
+  @@map("advanced_alarms")
+}
