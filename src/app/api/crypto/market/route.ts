@@ -125,104 +125,81 @@ Object.entries(COIN_IDS).forEach(([symbol, id]) => {
 });
 
 export async function GET() {
+  // Try Binance API first (most reliable on Vercel)
+  const binanceResult = await tryBinanceAPI();
+  if (binanceResult) return binanceResult;
+
+  // Fallback to CoinGecko if Binance fails
   try {
-    // Try CoinGecko API - simplified fetch without timeout
     const response = await fetch(
       'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1',
-      {
-        next: { revalidate: 0 },
-      }
+      { next: { revalidate: 0 } }
     );
 
-    if (!response.ok) {
-      console.log('CoinGecko API failed, status:', response.status);
-      // Try alternative API
-      return await tryAlternativeAPI();
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const marketData: MarketData[] = data.map((coin: {
+          id: string;
+          symbol: string;
+          current_price: number;
+          price_change_24h: number;
+          price_change_percentage_24h: number;
+          total_volume: number;
+          market_cap: number;
+          high_24h: number;
+          low_24h: number;
+          market_cap_rank: number;
+        }) => {
+          const symbol = coin.symbol.toUpperCase() + 'USDT';
+          const price = coin.current_price || 0;
+          return {
+            symbol,
+            price,
+            priceChange: coin.price_change_24h || 0,
+            priceChangePercent: coin.price_change_percentage_24h || 0,
+            volume: coin.total_volume || 0,
+            quoteVolume: coin.market_cap || 0,
+            highPrice: coin.high_24h || price * 1.02,
+            lowPrice: coin.low_24h || price * 0.98,
+            openPrice: price - (coin.price_change_24h || 0),
+            category: getCoinCategory(symbol),
+            marketCap: coin.market_cap,
+            marketCapRank: coin.market_cap_rank,
+          };
+        }).filter((coin: MarketData) => coin.price > 0);
+
+        if (marketData.length > 0) {
+          return formatResponse(marketData, 'CoinGecko');
+        }
+      }
     }
-
-    const data = await response.json();
-
-    if (!Array.isArray(data) || data.length === 0) {
-      console.log('CoinGecko returned empty data');
-      return await tryAlternativeAPI();
-    }
-
-    console.log('CoinGecko API success! Got', data.length, 'coins');
-
-    // Transform CoinGecko data to our format
-    const marketData: MarketData[] = data.map((coin: {
-      id: string;
-      symbol: string;
-      name: string;
-      current_price: number;
-      price_change_24h: number;
-      price_change_percentage_24h: number;
-      total_volume: number;
-      market_cap: number;
-      high_24h: number;
-      low_24h: number;
-      market_cap_rank: number;
-    }) => {
-      const symbol = coin.symbol.toUpperCase() + 'USDT';
-      const price = coin.current_price || 0;
-      const change = coin.price_change_24h || 0;
-      const changePercent = coin.price_change_percentage_24h || 0;
-
-      return {
-        symbol,
-        price,
-        priceChange: change,
-        priceChangePercent: changePercent,
-        volume: coin.total_volume || 0,
-        quoteVolume: coin.market_cap || 0,
-        highPrice: coin.high_24h || price * 1.02,
-        lowPrice: coin.low_24h || price * 0.98,
-        openPrice: price - change,
-        category: getCoinCategory(symbol),
-        marketCap: coin.market_cap,
-        marketCapRank: coin.market_cap_rank,
-      };
-    }).filter((coin: MarketData) => coin.price > 0);
-
-    if (marketData.length === 0) {
-      return await tryAlternativeAPI();
-    }
-
-    return formatResponse(marketData, 'CoinGecko');
   } catch (error) {
-    console.error('Market data fetch error:', error);
-    return await tryAlternativeAPI();
+    console.error('CoinGecko API error:', error);
   }
+
+  return sendFallbackResponse();
 }
 
-// Alternative API - Binance public API
-async function tryAlternativeAPI() {
+// Binance API - Primary source for real prices
+async function tryBinanceAPI() {
   try {
-    console.log('Trying Binance API as alternative...');
     const response = await fetch(
       'https://api.binance.com/api/v3/ticker/24hr',
       { next: { revalidate: 0 } }
     );
 
-    if (!response.ok) {
-      console.log('Binance API also failed');
-      return sendFallbackResponse();
-    }
+    if (!response.ok) return null;
 
     const data = await response.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
 
-    if (!Array.isArray(data) || data.length === 0) {
-      return sendFallbackResponse();
-    }
-
-    console.log('Binance API success! Got', data.length, 'pairs');
-
-    // Filter USDT pairs and map to our format
+    // Filter USDT pairs
     const usdtPairs = data.filter((t: { symbol: string }) =>
-      t.symbol.endsWith('USDT') && !t.symbol.includes('UP') && !t.symbol.includes('DOWN')
+      t.symbol.endsWith('USDT') && !t.symbol.includes('UP') && !t.symbol.includes('DOWN') && !t.symbol.includes('BEAR') && !t.symbol.includes('BULL')
     );
 
-    const marketData: MarketData[] = usdtPairs.slice(0, 100).map((ticker: {
+    const marketData: MarketData[] = usdtPairs.slice(0, 150).map((ticker: {
       symbol: string;
       lastPrice: string;
       priceChange: string;
@@ -234,14 +211,11 @@ async function tryAlternativeAPI() {
       openPrice: string;
     }) => {
       const price = parseFloat(ticker.lastPrice) || 0;
-      const change = parseFloat(ticker.priceChange) || 0;
-      const changePercent = parseFloat(ticker.priceChangePercent) || 0;
-
       return {
         symbol: ticker.symbol,
         price,
-        priceChange: change,
-        priceChangePercent: changePercent,
+        priceChange: parseFloat(ticker.priceChange) || 0,
+        priceChangePercent: parseFloat(ticker.priceChangePercent) || 0,
         volume: parseFloat(ticker.volume) || 0,
         quoteVolume: parseFloat(ticker.quoteVolume) || 0,
         highPrice: parseFloat(ticker.highPrice) || price,
@@ -251,14 +225,12 @@ async function tryAlternativeAPI() {
       };
     }).filter((coin: MarketData) => coin.price > 0);
 
-    if (marketData.length === 0) {
-      return sendFallbackResponse();
-    }
+    if (marketData.length === 0) return null;
 
     return formatResponse(marketData, 'Binance');
   } catch (error) {
-    console.error('Alternative API error:', error);
-    return sendFallbackResponse();
+    console.error('Binance API error:', error);
+    return null;
   }
 }
 
