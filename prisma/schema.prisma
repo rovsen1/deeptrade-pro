@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -45,7 +45,7 @@ model Trade {
   type          String   // LONG or SHORT
   signalType    String   // scalp or swing
   signalStrength Int     // 0-100
-  strategy      String   @default("default") // ScalpMaster, SwingPro, vs.
+  strategy      String   @default("default")
   
   // Fiyat bilgileri
   entryPrice    Float
@@ -54,12 +54,12 @@ model Trade {
   currentPrice  Float    @default(0)
   
   // Sonuç
-  status        String   @default("ACTIVE") // ACTIVE, TP_HIT, SL_HIT, CANCELLED
+  status        String   @default("ACTIVE")
   pnl           Float    @default(0)
   pnlPercent    Float    @default(0)
   
   // Sinyal nedenleri
-  reasons       String   // JSON array
+  reasons       String
   
   // Zaman bilgileri
   timeframe     String
@@ -97,7 +97,7 @@ model TradeHistory {
   takeProfit    Float
   
   // Sonuç
-  result        String   // TP_HIT, SL_HIT, CANCELLED
+  result        String
   pnl           Float
   pnlPercent    Float
   
@@ -105,7 +105,7 @@ model TradeHistory {
   reasons       String
   
   // Süre
-  duration      Int      // dakika cinsinden
+  duration      Int
   
   // Zaman bilgileri
   openedAt      DateTime
@@ -128,14 +128,14 @@ model Backtest {
   userId        String
   
   // Backtest parametreleri
-  strategy      String   // ScalpMaster, SwingPro, TrendFollower, vs.
+  strategy      String
   symbol        String
   timeframe     String
   startDate     DateTime
   endDate       DateTime
   
   // Parametreler
-  parameters    String   // JSON: { rsiPeriod: 14, emaFast: 9, emaSlow: 21, vs. }
+  parameters    String
   
   // Sonuçlar
   totalTrades   Int      @default(0)
@@ -155,10 +155,10 @@ model Backtest {
   maxDrawdown   Float    @default(0)
   sharpeRatio   Float    @default(0)
   profitFactor  Float    @default(0)
-  avgTradeDuration Int   @default(0) // dakika
+  avgTradeDuration Int   @default(0)
   
   // Trade listesi
-  trades        String   // JSON array of trades
+  trades        String
   
   // Zaman
   createdAt     DateTime @default(now())
@@ -181,9 +181,9 @@ model DetectedPattern {
   
   // Pattern bilgileri
   symbol        String
-  pattern       String   // DOUBLE_BOTTOM, HEAD_SHOULDERS, TRIANGLE, vs.
-  patternType   String   // bullish, bearish, neutral
-  confidence    Float    // 0-100
+  pattern       String
+  patternType   String
+  confidence    Float
   
   // Seviyeler
   entryPrice    Float
@@ -191,13 +191,13 @@ model DetectedPattern {
   stopLossPrice Float
   
   // Pattern detayları
-  neckline      Float?   // Head & Shoulders için
-  breakoutLevel Float?   // Triangle için
-  patternPoints String   // JSON: fiyat/zaman noktaları
+  neckline      Float?
+  breakoutLevel Float?
+  patternPoints String
   
   // Durum
-  status        String   @default("ACTIVE") // ACTIVE, COMPLETED, FAILED
-  result        String?  // SUCCESS, FAILURE
+  status        String   @default("ACTIVE")
+  result        String?
   
   // Zaman
   timeframe     String
@@ -222,22 +222,22 @@ model AdvancedAlarm {
   
   // Alarm bilgileri
   symbol        String
-  alarmType     String   // PRICE, INDICATOR, PATTERN, WHALE
+  alarmType     String
   
   // Fiyat alarmları
   targetPrice   Float?
-  direction     String?  // above, below
+  direction     String?
   
   // İndikatör alarmları
-  indicator     String?  // RSI, MACD, EMA_CROSS, vs.
-  condition     String?  // crosses_above, crosses_below, enters_zone
-  value         Float?   // RSI < 30 için 30
+  indicator     String?
+  condition     String?
+  value         Float?
   
   // Pattern alarmları
-  patternType   String?  // DOUBLE_BOTTOM, HEAD_SHOULDERS, vs.
+  patternType   String?
   
   // Whale alarmları
-  minVolume     Float?   // Minimum işlem hacmi
+  minVolume     Float?
   
   // Bildirim
   notifyTelegram Boolean @default(true)
