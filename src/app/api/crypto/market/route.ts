@@ -192,65 +192,87 @@ export async function GET() {
 
 // Binance API - Primary source for real prices
 async function tryBinanceAPI() {
-  try {
-    const response = await fetch(
-      'https://api.binance.com/api/v3/ticker/24hr',
-      {
+  // Try multiple Binance endpoints
+  const endpoints = [
+    'https://api.binance.com/api/v3/ticker/24hr',
+    'https://api1.binance.com/api/v3/ticker/24hr',
+    'https://api2.binance.com/api/v3/ticker/24hr',
+    'https://api3.binance.com/api/v3/ticker/24hr',
+    'https://data-api.binance.com/api/v3/ticker/24hr',
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      console.log('Trying Binance endpoint:', endpoint);
+      
+      const response = await fetch(endpoint, {
         cache: 'no-store',
         headers: {
           'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },
+      });
+
+      if (!response.ok) {
+        console.log('Failed:', response.status);
+        continue;
       }
-    );
 
-    if (!response.ok) {
-      console.log('Binance API failed:', response.status);
-      return null;
+      const data = await response.json();
+      if (!Array.isArray(data) || data.length === 0) {
+        console.log('Empty data');
+        continue;
+      }
+
+      console.log('Binance API success! Got', data.length, 'pairs from', endpoint);
+
+      // Filter USDT pairs
+      const usdtPairs = data.filter((t: { symbol: string }) =>
+        t.symbol.endsWith('USDT') && 
+        !t.symbol.includes('UP') && 
+        !t.symbol.includes('DOWN') && 
+        !t.symbol.includes('BEAR') && 
+        !t.symbol.includes('BULL') &&
+        !t.symbol.includes('HEDGE')
+      );
+
+      const marketData: MarketData[] = usdtPairs.map((ticker: {
+        symbol: string;
+        lastPrice: string;
+        priceChange: string;
+        priceChangePercent: string;
+        volume: string;
+        quoteVolume: string;
+        highPrice: string;
+        lowPrice: string;
+        openPrice: string;
+      }) => {
+        const price = parseFloat(ticker.lastPrice) || 0;
+        return {
+          symbol: ticker.symbol,
+          price,
+          priceChange: parseFloat(ticker.priceChange) || 0,
+          priceChangePercent: parseFloat(ticker.priceChangePercent) || 0,
+          volume: parseFloat(ticker.volume) || 0,
+          quoteVolume: parseFloat(ticker.quoteVolume) || 0,
+          highPrice: parseFloat(ticker.highPrice) || price,
+          lowPrice: parseFloat(ticker.lowPrice) || price,
+          openPrice: parseFloat(ticker.openPrice) || price,
+          category: getCoinCategory(ticker.symbol),
+        };
+      }).filter((coin: MarketData) => coin.price > 0);
+
+      if (marketData.length > 0) {
+        return formatResponse(marketData, 'Binance');
+      }
+    } catch (error) {
+      console.error('Binance endpoint error:', endpoint, error);
+      continue;
     }
-
-    const data = await response.json();
-    if (!Array.isArray(data) || data.length === 0) return null;
-
-    console.log('Binance API success! Got', data.length, 'pairs');
-
-    // Filter USDT pairs
-    const usdtPairs = data.filter((t: { symbol: string }) =>
-      t.symbol.endsWith('USDT') && !t.symbol.includes('UP') && !t.symbol.includes('DOWN') && !t.symbol.includes('BEAR') && !t.symbol.includes('BULL')
-    );
-
-    const marketData: MarketData[] = usdtPairs.slice(0, 150).map((ticker: {
-      symbol: string;
-      lastPrice: string;
-      priceChange: string;
-      priceChangePercent: string;
-      volume: string;
-      quoteVolume: string;
-      highPrice: string;
-      lowPrice: string;
-      openPrice: string;
-    }) => {
-      const price = parseFloat(ticker.lastPrice) || 0;
-      return {
-        symbol: ticker.symbol,
-        price,
-        priceChange: parseFloat(ticker.priceChange) || 0,
-        priceChangePercent: parseFloat(ticker.priceChangePercent) || 0,
-        volume: parseFloat(ticker.volume) || 0,
-        quoteVolume: parseFloat(ticker.quoteVolume) || 0,
-        highPrice: parseFloat(ticker.highPrice) || price,
-        lowPrice: parseFloat(ticker.lowPrice) || price,
-        openPrice: parseFloat(ticker.openPrice) || price,
-        category: getCoinCategory(ticker.symbol),
-      };
-    }).filter((coin: MarketData) => coin.price > 0);
-
-    if (marketData.length === 0) return null;
-
-    return formatResponse(marketData, 'Binance');
-  } catch (error) {
-    console.error('Binance API error:', error);
-    return null;
   }
+
+  console.log('All Binance endpoints failed');
+  return null;
 }
 
 function formatResponse(marketData: MarketData[], source: string) {
