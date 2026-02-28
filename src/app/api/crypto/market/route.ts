@@ -125,29 +125,21 @@ Object.entries(COIN_IDS).forEach(([symbol, id]) => {
 });
 
 export async function GET() {
-  // Force dynamic - no caching
-  const headers = new Headers();
-  headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  headers.set('Pragma', 'no-cache');
-  headers.set('Expires', '0');
-
   try {
     // Try CoinGecko API first (works on Vercel)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    // Add timestamp to bypass any CDN cache
-    const timestamp = Date.now();
-
-    // Fetch top 100 coins by market cap from CoinGecko
+    // Simpler CoinGecko endpoint that always works
     const response = await fetch(
-      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=24h&_t=${timestamp}`,
+      'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1',
       {
         signal: controller.signal,
         headers: {
           'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; DeepTrade-Pro/1.0)',
         },
-        cache: 'no-store', // Force no cache
+        cache: 'no-store',
       }
     );
 
@@ -164,6 +156,8 @@ export async function GET() {
       console.log('CoinGecko returned empty data');
       return sendFallbackResponse();
     }
+
+    console.log('✅ CoinGecko API success! Got', data.length, 'coins');
 
     // Transform CoinGecko data to our format
     const marketData: MarketData[] = data.map((coin: {
@@ -238,6 +232,10 @@ export async function GET() {
     const positiveCount = marketData.filter(c => c.priceChangePercent > 0).length;
     const negativeCount = marketData.filter(c => c.priceChangePercent < 0).length;
 
+    // No-cache headers
+    const resHeaders = new Headers();
+    resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+
     return NextResponse.json({
       success: true,
       data: marketData.slice(0, 50),
@@ -259,7 +257,7 @@ export async function GET() {
       },
       source: 'CoinGecko',
       timestamp: Date.now(),
-    }, { headers });
+    }, { headers: resHeaders });
   } catch (error) {
     console.error('Market data fetch error:', error);
     return sendFallbackResponse();
