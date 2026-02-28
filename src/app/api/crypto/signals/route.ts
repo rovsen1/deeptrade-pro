@@ -560,26 +560,19 @@ async function fetchBinanceKlines(symbol: string, interval: string): Promise<{ c
   return null;
 }
 
-// Get current price from Binance ticker
-async function getBinancePrice(symbol: string): Promise<number | null> {
-  const endpoints = ['api.binance.com', 'api1.binance.com', 'api2.binance.com', 'api3.binance.com'];
-
-  for (const host of endpoints) {
-    try {
-      const response = await fetch(
-        `https://${host}/api/v3/ticker/price?symbol=${symbol}`,
-        { cache: 'no-store' }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        const price = parseFloat(data.price);
-        if (price > 0) return price;
-      }
-    } catch {
-      continue;
-    }
+// Get current price from CoinGecko
+async function getCoinGeckoPrice(coinId: string): Promise<number | null> {
+  try {
+    const response = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`,
+      { cache: 'no-store' }
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data[coinId]?.usd || null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 // Main API Handler
@@ -599,14 +592,50 @@ export async function GET(request: NextRequest) {
         ? ['5m', '15m', '1h']
         : ['4h', '1d'];
 
-    // Get REAL current price from Binance FIRST - NO FALLBACK
-    const currentPrice = await getBinancePrice(symbol);
+    // Map symbol to CoinGecko ID
+    const symbolToId: Record<string, string> = {
+      'BTCUSDT': 'bitcoin',
+      'ETHUSDT': 'ethereum',
+      'BNBUSDT': 'binancecoin',
+      'SOLUSDT': 'solana',
+      'XRPUSDT': 'ripple',
+      'ADAUSDT': 'cardano',
+      'DOGEUSDT': 'dogecoin',
+      'AVAXUSDT': 'avalanche-2',
+      'DOTUSDT': 'polkadot',
+      'LINKUSDT': 'chainlink',
+      'UNIUSDT': 'uniswap',
+      'ATOMUSDT': 'cosmos',
+      'LTCUSDT': 'litecoin',
+      'ETCUSDT': 'ethereum-classic',
+      'NEARUSDT': 'near',
+      'FTMUSDT': 'fantom',
+      'SHIBUSDT': 'shiba-inu',
+      'PEPEUSDT': 'pepe',
+      'AAVEUSDT': 'aave',
+      'MKRUSDT': 'maker',
+      'ARBUSDT': 'arbitrum',
+      'OPUSDT': 'optimism',
+      'SUIUSDT': 'sui',
+      'APTUSDT': 'aptos',
+      'INJUSDT': 'injective-protocol',
+    };
+
+    const coinId = symbolToId[symbol] || symbol.toLowerCase().replace('usdt', '');
+
+    // Get price from CoinGecko (works on Vercel)
+    let currentPrice = await getCoinGeckoPrice(coinId);
+
+    // If CoinGecko fails, try to get from client price parameter
+    const clientPrice = searchParams.get('price');
+    if (!currentPrice && clientPrice) {
+      currentPrice = parseFloat(clientPrice);
+    }
 
     if (!currentPrice) {
-      // If Binance doesn't have this coin, return error
       return NextResponse.json({
         success: false,
-        error: `${symbol} Binance'de bulunamadı`,
+        error: `${symbol} fiyatı alınamadı`,
         symbol,
         signals: [],
       }, { headers: resHeaders });
