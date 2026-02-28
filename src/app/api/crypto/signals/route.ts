@@ -562,6 +562,12 @@ async function fetchBinanceKlines(symbol: string, interval: string): Promise<{ c
 
 // Main API Handler
 export async function GET(request: NextRequest) {
+  // Force dynamic - no caching
+  const resHeaders = new Headers();
+  resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  resHeaders.set('Pragma', 'no-cache');
+  resHeaders.set('Expires', '0');
+
   try {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get('symbol') || 'BTCUSDT';
@@ -591,18 +597,18 @@ export async function GET(request: NextRequest) {
       }
       
       if (!klines || klines.closes.length < 50) {
-        // Use realistic fallback based on current market
+        // Use realistic fallback based on current market (January 2025)
         const realPrices: Record<string, number> = {
-          'BTCUSDT': 67000,
+          'BTCUSDT': 97500,
           'ETHUSDT': 3400,
-          'BNBUSDT': 580,
-          'SOLUSDT': 175,
-          'XRPUSDT': 0.52,
-          'ADAUSDT': 0.267,
-          'DOGEUSDT': 0.12,
-          'AVAXUSDT': 35,
-          'DOTUSDT': 6.5,
-          'LINKUSDT': 14,
+          'BNBUSDT': 650,
+          'SOLUSDT': 195,
+          'XRPUSDT': 2.40,
+          'ADAUSDT': 0.95,
+          'DOGEUSDT': 0.38,
+          'AVAXUSDT': 42,
+          'DOTUSDT': 8.5,
+          'LINKUSDT': 22,
         };
         
         const basePrice = realPrices[symbol] || 100;
@@ -725,7 +731,7 @@ export async function GET(request: NextRequest) {
         description: 'Backtest doğrulanmış stratejilerden sinyaller',
         dataSource: 'CoinGecko + Binance',
       },
-    });
+    }, { headers: resHeaders });
   } catch (error) {
     console.error('Signal generation error:', error);
     
@@ -751,9 +757,9 @@ export async function GET(request: NextRequest) {
           { name: 'ConfluenceMaster', signal, confidence: Math.max(0, confidence - 10), winrate: 49.02, reasons: ['Analiz'] },
           { name: 'MACDMomentum', signal: 'BEKLE', confidence: 25, winrate: 43.79, reasons: ['Net değil'] },
         ],
-        price: 67000,
-        indicators: { rsi: 50, ema50: 66500, ema200: 64000, atr: 1500, volumeRatio: 1.0, superTrend: 'nötr', obvTrend: 'yükseliş', ichimokuCloud: 'üstünde', adx: 25 },
-        levels: { support: 65500, resistance: 68500 },
+        price: 97500,
+        indicators: { rsi: 50, ema50: 96500, ema200: 92000, atr: 2500, volumeRatio: 1.0, superTrend: 'nötr', obvTrend: 'yükseliş', ichimokuCloud: 'üstünde', adx: 25 },
+        levels: { support: 95500, resistance: 99500 },
         note: 'Fallback signal',
       };
     });
@@ -768,6 +774,6 @@ export async function GET(request: NextRequest) {
         strategies: ['SmartTrendFollower (58.3%)', 'StochRSIMeanReversion (53.9%)'],
         description: 'Fallback signals - API temporarily unavailable',
       },
-    });
+    }, { headers: resHeaders });
   }
 }

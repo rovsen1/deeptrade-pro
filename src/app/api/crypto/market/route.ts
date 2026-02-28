@@ -125,20 +125,29 @@ Object.entries(COIN_IDS).forEach(([symbol, id]) => {
 });
 
 export async function GET() {
+  // Force dynamic - no caching
+  const headers = new Headers();
+  headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  headers.set('Pragma', 'no-cache');
+  headers.set('Expires', '0');
+
   try {
     // Try CoinGecko API first (works on Vercel)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
+    // Add timestamp to bypass any CDN cache
+    const timestamp = Date.now();
+
     // Fetch top 100 coins by market cap from CoinGecko
     const response = await fetch(
-      'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=24h',
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=24h&_t=${timestamp}`,
       {
         signal: controller.signal,
         headers: {
           'Accept': 'application/json',
         },
-        next: { revalidate: 30 } // Cache for 30 seconds
+        cache: 'no-store', // Force no cache
       }
     );
 
@@ -250,7 +259,7 @@ export async function GET() {
       },
       source: 'CoinGecko',
       timestamp: Date.now(),
-    });
+    }, { headers });
   } catch (error) {
     console.error('Market data fetch error:', error);
     return sendFallbackResponse();
@@ -258,6 +267,12 @@ export async function GET() {
 }
 
 function sendFallbackResponse() {
+  // No-cache headers
+  const resHeaders = new Headers();
+  resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  resHeaders.set('Pragma', 'no-cache');
+  resHeaders.set('Expires', '0');
+
   // Updated fallback prices (January 2025 approximate market prices)
   const fallbackPrices: Record<string, { price: number; change: number }> = {
     'BTCUSDT': { price: 97500, change: 1.2 },
@@ -340,5 +355,5 @@ function sendFallbackResponse() {
     source: 'Fallback (API temporarily unavailable)',
     timestamp: Date.now(),
     note: 'Using fallback prices - CoinGecko API temporarily unavailable',
-  });
+  }, { headers: resHeaders });
 }
