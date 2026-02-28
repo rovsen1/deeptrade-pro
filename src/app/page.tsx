@@ -76,7 +76,11 @@ import {
   DollarSign,
   Layers,
   Flame,
+  Trophy,
+  Play,
 } from 'lucide-react';
+import TradeSystem from '@/components/TradeSystem';
+import BacktestSystem from '@/components/BacktestSystem';
 
 // Types
 interface MarketData {
@@ -148,6 +152,7 @@ interface PortfolioEntry {
 }
 
 interface UserProfile {
+  id?: string;
   username: string;
   telegramBotToken: string;
   telegramChatId: string;
@@ -162,7 +167,13 @@ function loadFromStorage<T>(key: string, defaultValue: T): T {
   if (typeof window === 'undefined') return defaultValue;
   try {
     const saved = localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : defaultValue;
+    if (!saved) return defaultValue;
+    const parsed = JSON.parse(saved);
+    // Default değerler ile birleştir - eksik alanları tamamla
+    if (typeof defaultValue === 'object' && defaultValue !== null) {
+      return { ...defaultValue, ...parsed };
+    }
+    return parsed;
   } catch {
     return defaultValue;
   }
@@ -214,6 +225,7 @@ export default function CryptoDashboard() {
   const [showAlarmModal, setShowAlarmModal] = useState(false);
   const [showPortfolioModal, setShowPortfolioModal] = useState(false);
   const [showCalculatorModal, setShowCalculatorModal] = useState(false);
+  const [autoTradingEnabled, setAutoTradingEnabled] = useState(true); // Otomatik iş açma
   
   // Alarm State
   const [alarmPrice, setAlarmPrice] = useState('');
@@ -235,9 +247,27 @@ export default function CryptoDashboard() {
     saveToStorage('cryptoProfile', profile);
   }, [profile]);
 
+  // Sayfa yüklendiğinde - username var ama id yoksa database'den al
+  useEffect(() => {
+    const fetchUserId = async () => {
+      if (profile.username && !profile.id) {
+        try {
+          const response = await fetch(`/api/user?username=${profile.username}`);
+          const data = await response.json();
+          if (data.success && data.data?.id) {
+            setProfile(prev => ({ ...prev, id: data.data.id }));
+          }
+        } catch (error) {
+          console.error('User ID fetch error:', error);
+        }
+      }
+    };
+    fetchUserId();
+  }, []); // Sadece bir kez çalışsın
+
   // Check alarms
   useEffect(() => {
-    if (marketData.length === 0 || profile.alarms.length === 0) return;
+    if (marketData.length === 0 || !profile.alarms?.length) return;
     
     profile.alarms.forEach(alarm => {
       if (alarm.triggered) return;
@@ -249,7 +279,7 @@ export default function CryptoDashboard() {
         // Trigger alarm
         setProfile(prev => ({
           ...prev,
-          alarms: prev.alarms.map(a => 
+          alarms: (prev.alarms || []).map(a => 
             a.symbol === alarm.symbol && a.targetPrice === alarm.targetPrice
               ? { ...a, triggered: true }
               : a
@@ -353,6 +383,91 @@ export default function CryptoDashboard() {
     } catch {}
   }, []);
 
+  // Otomatik iş açma
+  const openAutoTrade = useCallback(async (signal: Signal) => {
+    if (!profile.id || !autoTradingEnabled) return;
+    if (signal.signal === 'BEKLE') return;
+    if (signal.strength < 60) return; // Minimum güç %60
+
+    try {
+      // Klines verisini al (TP/SL hesaplaması için)
+      const klinesRes = await fetch(`/api/crypto/klines?symbol=${signal.symbol}&interval=${signal.timeframe}&limit=50`);
+      let klines = [];
+      if (klinesRes.ok) {
+        const klinesData = await klinesRes.json();
+        if (klinesData.success) {
+          klines = klinesData.data.map((k: { openTime: number; open: number; high: number; low: number; close: number; volume: number }) => ({
+            open: k.open,
+            high: k.high,
+            low: k.low,
+            close: k.close,
+            volume: k.volume,
+            time: k.openTime,
+          }));
+        }
+      }
+
+      // İşlem aç
+      const response = await fetch('/api/trades/auto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: profile.id,
+          symbol: signal.symbol,
+          type: signal.signal === 'AL' ? 'LONG' : 'SHORT',
+          signalType: signal.type,
+          signalStrength: signal.strength,
+          entryPrice: signal.price,
+          reasons: signal.reasons,
+          timeframe: signal.timeframe,
+          klines,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log(`✅ Otomatik işlem açıldı: ${signal.symbol} ${signal.signal === 'AL' ? 'LONG' : 'SHORT'}`);
+        
+        // Telegram bildirimi
+        if (profile.notificationsEnabled && profile.telegramBotToken && profile.telegramChatId) {
+          const tradeType = signal.signal === 'AL' ? 'LONG' : 'SHORT';
+          const emoji = tradeType === 'LONG' ? '🔵' : '🔴';
+          await fetch('/api/telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              botToken: profile.telegramBotToken,
+              chatId: profile.telegramChatId,
+              message: `🔔 <b>YENİ İŞLEM AÇILDI</b>\n\n${emoji} <b>${signal.symbol}</b> ${tradeType}\nEntry: $${signal.price}\nSL: $${data.data.stopLoss}\nTP: $${data.data.takeProfit}\nGüç: %${signal.strength}\n\n📌 ${signal.reasons.slice(0, 2).join(', ')}`,
+            }),
+          });
+        }
+      } else if (data.error?.includes('zaten aktif')) {
+        // Zaten aktif işlem var, sessizce geç
+        console.log(`⚠️ ${signal.symbol} için zaten aktif işlem var`);
+      }
+    } catch (error) {
+      console.error('Auto trade error:', error);
+    }
+  }, [profile.id, profile.notificationsEnabled, profile.telegramBotToken, profile.telegramChatId, autoTradingEnabled]);
+
+  // Sinyaller yüklendikten sonra otomatik iş aç
+  useEffect(() => {
+    if (!profile.id || !autoTradingEnabled) return;
+    if (scalpSignals.length === 0 && swingSignals.length === 0) return;
+
+    // En güçlü sinyaller için otomatik iş aç (her seferinde sadece 1 tane)
+    const allSignals = [...scalpSignals, ...swingSignals]
+      .filter(s => s.signal !== 'BEKLE' && s.strength >= 65)
+      .sort((a, b) => b.strength - a.strength);
+
+    if (allSignals.length > 0) {
+      // Sadece en güçlü sinyali işle
+      openAutoTrade(allSignals[0]);
+    }
+  }, [scalpSignals.length, swingSignals.length, profile.id, autoTradingEnabled, openAutoTrade]);
+
   // Initial load
   useEffect(() => {
     const init = async () => {
@@ -413,12 +528,43 @@ export default function CryptoDashboard() {
   }, [selectedCoin, fetchOrderBook, fetchFundingData]);
 
   // Handlers
-  const handleLogin = useCallback(() => {
+  const handleLogin = useCallback(async () => {
     if (loginUsername.trim()) {
-      setProfile(prev => ({ ...prev, username: loginUsername.trim() }));
-      setIsLoggedIn(true);
-      setShowLoginModal(false);
-      setLoginUsername('');
+      try {
+        // Database'e kayıt ol / giriş yap
+        const response = await fetch('/api/user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: loginUsername.trim() }),
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+          setProfile(prev => ({ 
+            ...prev, 
+            username: loginUsername.trim(),
+            id: data.data.id,
+          }));
+          setIsLoggedIn(true);
+          setShowLoginModal(false);
+          setLoginUsername('');
+        } else {
+          // API returned error
+          console.error('Login error:', data.error);
+          // Yine de giriş yap ama ID olmadan
+          setProfile(prev => ({ ...prev, username: loginUsername.trim() }));
+          setIsLoggedIn(true);
+          setShowLoginModal(false);
+          setLoginUsername('');
+        }
+      } catch (error) {
+        console.error('Login error:', error);
+        // Fallback to localStorage only - yine de giriş yap
+        setProfile(prev => ({ ...prev, username: loginUsername.trim() }));
+        setIsLoggedIn(true);
+        setShowLoginModal(false);
+        setLoginUsername('');
+      }
     }
   }, [loginUsername]);
 
@@ -430,9 +576,9 @@ export default function CryptoDashboard() {
   const toggleWatchlist = useCallback((symbol: string) => {
     setProfile(prev => ({
       ...prev,
-      watchlist: prev.watchlist.includes(symbol)
-        ? prev.watchlist.filter(s => s !== symbol)
-        : [...prev.watchlist, symbol],
+      watchlist: (prev.watchlist || []).includes(symbol)
+        ? (prev.watchlist || []).filter(s => s !== symbol)
+        : [...(prev.watchlist || []), symbol],
     }));
   }, []);
 
@@ -443,7 +589,7 @@ export default function CryptoDashboard() {
     
     setProfile(prev => ({
       ...prev,
-      alarms: [...prev.alarms, {
+      alarms: [...(prev.alarms || []), {
         symbol: selectedCoin,
         targetPrice,
         direction: alarmDirection,
@@ -584,10 +730,10 @@ export default function CryptoDashboard() {
           <div className="container mx-auto px-4 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <img src="/logo.png" alt="DeepTrade Logo" className="w-10 h-10 rounded-lg shadow-lg" />
+                <img src="/logo.png" alt="DeepTrade Pro Logo" className="w-10 h-10 rounded-lg shadow-lg ring-1 ring-primary/30" />
                 <div>
-                  <h1 className="text-xl font-bold gradient-text">DeepTrade</h1>
-                  <p className="text-xs text-muted-foreground hidden sm:block">Profesyonel Kripto Analiz Platformu</p>
+                  <h1 className="text-xl font-bold gradient-text">DeepTrade Pro</h1>
+                  <p className="text-[10px] text-muted-foreground hidden sm:block tracking-widest uppercase">Wall Street Grade Analytics</p>
                 </div>
               </div>
               
@@ -641,8 +787,8 @@ export default function CryptoDashboard() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => setShowAlarmModal(true)} disabled={!selectedCoin}>
               <Bell className="w-4 h-4 mr-1" />Alarm
-              {profile.alarms.filter(a => !a.triggered).length > 0 && (
-                <Badge variant="secondary" className="ml-1">{profile.alarms.filter(a => !a.triggered).length}</Badge>
+              {(profile.alarms || []).filter(a => !a.triggered).length > 0 && (
+                <Badge variant="secondary" className="ml-1">{(profile.alarms || []).filter(a => !a.triggered).length}</Badge>
               )}
             </Button>
             <Button variant="outline" size="sm" onClick={() => setShowPortfolioModal(true)}>
@@ -659,9 +805,15 @@ export default function CryptoDashboard() {
               <TabsTrigger value="swing" className="flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-primary" /><span className="hidden sm:inline">Swing</span>
               </TabsTrigger>
+              <TabsTrigger value="trades" className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-primary" /><span className="hidden sm:inline">İşlemler</span>
+              </TabsTrigger>
+              <TabsTrigger value="backtest" className="flex items-center gap-2">
+                <Play className="w-4 h-4 text-accent" /><span className="hidden sm:inline">Backtest</span>
+              </TabsTrigger>
               <TabsTrigger value="watchlist" className="flex items-center gap-2">
                 <Star className="w-4 h-4" />
-                {profile.watchlist.length > 0 && <Badge variant="secondary">{profile.watchlist.length}</Badge>}
+                {(profile.watchlist || []).length > 0 && <Badge variant="secondary">{profile.watchlist.length}</Badge>}
               </TabsTrigger>
             </TabsList>
 
@@ -689,7 +841,7 @@ export default function CryptoDashboard() {
                           </div>
                           <div className="flex items-center gap-1">
                             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); toggleWatchlist(signal.symbol); }}>
-                              <Star className={`w-3 h-3 ${profile.watchlist.includes(signal.symbol) ? 'fill-primary text-primary' : ''}`} />
+                              <Star className={`w-3 h-3 ${(profile.watchlist || []).includes(signal.symbol) ? 'fill-primary text-primary' : ''}`} />
                             </Button>
                             <Badge className={getSignalColor(signal.signal)}>{signal.signal}</Badge>
                           </div>
@@ -760,21 +912,34 @@ export default function CryptoDashboard() {
               </div>
             </TabsContent>
 
+            {/* Trades - İşlem Takip */}
+            <TabsContent value="trades">
+              <TradeSystem 
+                userId={profile.id || ''} 
+                marketData={marketData}
+              />
+            </TabsContent>
+
+            {/* Backtest & Patterns */}
+            <TabsContent value="backtest">
+              <BacktestSystem userId={profile.id || ''} />
+            </TabsContent>
+
             {/* Watchlist */}
             <TabsContent value="watchlist">
               <Card className="bg-card">
                 <CardHeader className="py-3">
-                  <CardTitle className="text-sm">İzleme Listem ({profile.watchlist.length})</CardTitle>
+                  <CardTitle className="text-sm">İzleme Listem ({(profile.watchlist || []).length})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {profile.watchlist.length === 0 ? (
+                  {(profile.watchlist || []).length === 0 ? (
                     <div className="text-center py-8">
                       <Star className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
                       <p className="text-muted-foreground">İzleme listeniz boş</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                      {profile.watchlist.map(symbol => {
+                      {(profile.watchlist || []).map(symbol => {
                         const market = marketData.find(m => m.symbol === symbol);
                         return (
                           <Card key={symbol} className="crypto-card bg-card cursor-pointer" onClick={() => setSelectedCoin(symbol)}>
@@ -949,24 +1114,24 @@ export default function CryptoDashboard() {
                   <Bell className="w-4 h-4 mr-2" />Fiyat Alarmı Kur
                 </Button>
                 <Button variant="outline" className="w-full" onClick={() => toggleWatchlist(selectedCoin!)}>
-                  <Star className={`w-4 h-4 mr-2 ${profile.watchlist.includes(selectedCoin!) ? 'fill-primary' : ''}`} />
-                  {profile.watchlist.includes(selectedCoin!) ? 'İzlemeden Çıkar' : 'İzleme Listesine Ekle'}
+                  <Star className={`w-4 h-4 mr-2 ${(profile.watchlist || []).includes(selectedCoin!) ? 'fill-primary' : ''}`} />
+                  {(profile.watchlist || []).includes(selectedCoin!) ? 'İzlemeden Çıkar' : 'İzleme Listesine Ekle'}
                 </Button>
 
                 {/* Active Alarms */}
-                {profile.alarms.filter(a => a.symbol === selectedCoin && !a.triggered).length > 0 && (
+                {(profile.alarms || []).filter(a => a.symbol === selectedCoin && !a.triggered).length > 0 && (
                   <Card className="bg-card">
                     <CardHeader className="py-2">
                       <CardTitle className="text-sm">Aktif Alarmlar</CardTitle>
                     </CardHeader>
                     <CardContent className="p-2">
-                      {profile.alarms.filter(a => a.symbol === selectedCoin && !a.triggered).map((alarm, i) => (
+                      {(profile.alarms || []).filter(a => a.symbol === selectedCoin && !a.triggered).map((alarm, i) => (
                         <div key={i} className="flex items-center justify-between text-xs py-1">
                           <span>{alarm.direction === 'above' ? '↑ Üstü' : '↓ Altı'} ${alarm.targetPrice}</span>
                           <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => {
                             setProfile(prev => ({
                               ...prev,
-                              alarms: prev.alarms.filter(a => a !== alarm),
+                              alarms: (prev.alarms || []).filter(a => a !== alarm),
                             }));
                           }}>
                             <X className="w-3 h-3" />
@@ -1069,7 +1234,7 @@ export default function CryptoDashboard() {
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              {profile.portfolio.length === 0 ? (
+              {(profile.portfolio || []).length === 0 ? (
                 <div className="text-center py-8">
                   <Wallet className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
                   <p className="text-muted-foreground text-sm">Portföyünüz boş</p>
@@ -1077,7 +1242,7 @@ export default function CryptoDashboard() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {profile.portfolio.map((entry, i) => {
+                  {(profile.portfolio || []).map((entry, i) => {
                     const market = marketData.find(m => m.symbol === entry.symbol);
                     const pnl = market ? ((market.price - entry.buyPrice) * entry.amount) : 0;
                     const pnlPercent = market ? ((market.price - entry.buyPrice) / entry.buyPrice * 100) : 0;

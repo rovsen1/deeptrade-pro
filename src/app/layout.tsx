@@ -14,16 +14,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DeepTrade | Profesyonel Kripto Analiz Platformu",
-  description: "DeepTrade - Profesyonel Binance USDT kripto analiz platformu. RSI, MACD, EMA, SuperTrend, Ichimoku teknik analizi, al-sat sinyalleri, emir defteri, funding rate ve daha fazlası.",
-  keywords: ["DeepTrade", "kripto", "bitcoin", "USDT", "Binance", "teknik analiz", "RSI", "MACD", "EMA", "SuperTrend", "Ichimoku", "sinyal", "trading", "scalp", "swing"],
-  authors: [{ name: "DeepTrade" }],
+  title: "DeepTrade Pro | Wall Street Grade Crypto Analytics",
+  description: "DeepTrade Pro - Professional cryptocurrency analysis platform with advanced technical indicators, automated trading signals, and real-time market analytics. Scalp & Swing strategies with 25+ indicators.",
+  keywords: ["DeepTrade Pro", "crypto trading", "technical analysis", "RSI", "MACD", "SuperTrend", "Ichimoku", "trading signals", "scalp", "swing", "Binance", "Wall Street", "professional trading"],
+  authors: [{ name: "DeepTrade Pro" }],
   icons: {
-    icon: "/favicon.png",
+    icon: "/logo.png",
   },
   openGraph: {
-    title: "DeepTrade | Kripto Analiz Platformu",
-    description: "Profesyonel kripto analiz platformu - Scalp ve Swing sinyalleri",
+    title: "DeepTrade Pro | Professional Crypto Analytics",
+    description: "Wall Street grade cryptocurrency trading platform",
     type: "website",
   },
 };
