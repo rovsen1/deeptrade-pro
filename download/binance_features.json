@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://www.binance.com/en-AE/support/faq/detail/da311403b10347f09ff783a2525c8aa6",
+    "name": "Understanding Order Book and Market Depth",
+    "snippet": "The bar chart displayed beneath the order book represents the amount of buy and sell orders at various prices. Click [Depth] to view more ...",
+    "host_name": "www.binance.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.binance.com/en-NG/square/post/289656760064322",
+    "name": "The Ultimate Order Book Guide: Heatmap, Depth and Overlay",
+    "snippet": "Depth = liquidity visible in the order book. Shows you how many resting buy/sell orders are stacked at various price levels. What It Tells You:. Missing: features | Show results with: features\nFeb 8, 2026 — The Order Book Depth Overlay is a chart indicator that takes the total volume of waiting limit orders (liquidity) and displays it directly ...",
+    "host_name": "www.binance.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.binance.com/en/square/post/16574983497458",
+    "name": "What is an order book and how does it work?",
+    "snippet": "Many traders use depth charts, which are visual representations of the order book. In the chart, the x-axis shows price points and the y-axis ...\nNov 22, 2024 — An order book is like a real-time list of all current buy and sell orders for a particular asset, such as stocks, commodities, or cryptocurrencies.",
+    "host_name": "www.binance.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.binance.com/en-AE/square/post/23454905054321",
+    "name": "How to Reveal Market Secrets through Order Book Analysis  - Binance",
+    "snippet": "This data is usually displayed in the form of a table or depth chart, where sell orders are arranged in descending order and buy orders in ...",
+    "host_name": "www.binance.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.binance.com/en-AE/square/post/28340909979418",
+    "name": "How to Read Binance Order Books Like a Pro?",
+    "snippet": "Binance's depth chart is a visual representation of the order book. The green side shows cumulative buy orders, while the red side shows ... Missing: tools features",
+    "host_name": "www.binance.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.binance.com/en/square/post/17457718872985",
+    "name": "Introduction to the Order Book and Its Operations",
+    "snippet": "The depth chart has two curves: one is the buy price curve (green represents buy orders), and the other is the sell price curve (red represents ... Missing: features | Show results with: features\nDec 11, 2024 — The order book displays the current buy and sell orders (bid price and ask price), reflecting the market supply and demand situation for a ...",
+    "host_name": "www.binance.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.binance.com/en/square/post/25454592542890",
+    "name": "#TradingTools101 Trading Tools 101 on Binance: 10",
+    "snippet": "4️⃣ Order Book (Depth) – Shows buy/sell activity in real-time. 5️⃣ Drawing Tools – Mark support, resistance, and trendlines. 6️⃣ Price ...\nJun 10, 2025 — 4️⃣ Order Book (Depth ) – Shows buy/sell activity in real-time. 5️⃣ Drawing Tools – Mark support, resistance, and trendlines. 6️⃣ Price ...",
+    "host_name": "www.binance.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.binance.com/en/square/post/24707451284649",
+    "name": "“Order Book Secrets: The Ultimate Strategy for Pro-Level Futures",
+    "snippet": "What is the Order Book in Futures Trading? The order book is a digital record of all the buy and sell orders placed on an exchange like Binance.",
+    "host_name": "www.binance.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.researchgate.net/publication/369588558_OrderBookVis_A_Visualization_Approach_for_Comparing_Order_Books_from_Centralized_Crypto_Exchanges",
+    "name": "(PDF) OrderBookVis: A Visualization Approach for Comparing Order",
+    "snippet": "Order book snapshots of the first ten levels for the currency pair BTC/USD of six different exchanges. The view allows an easy comparison of the ...",
+    "host_name": "www.researchgate.net",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.binance.com/en/support/faq/detail/da311403b10347f09ff783a2525c8aa6",
+    "name": "Understanding Order Book and Market Depth",
+    "snippet": "Jul 25, 2021 — Binance order books show the cumulative size of liquidity for each side of the market (buy/sell) up to the top of the book. The order book helps ...",
+    "host_name": "www.binance.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]
