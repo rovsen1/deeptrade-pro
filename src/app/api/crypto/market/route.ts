@@ -129,14 +129,10 @@ Object.entries(COIN_IDS).forEach(([symbol, id]) => {
 });
 
 export async function GET() {
-  // Try Binance API first (most reliable on Vercel)
-  const binanceResult = await tryBinanceAPI();
-  if (binanceResult) return binanceResult;
-
-  // Fallback to CoinGecko if Binance fails
+  // Try CoinGecko first (works reliably on Vercel)
   try {
     const response = await fetch(
-      'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1',
+      'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=150&page=1',
       {
         cache: 'no-store',
         headers: {
@@ -179,6 +175,7 @@ export async function GET() {
         }).filter((coin: MarketData) => coin.price > 0);
 
         if (marketData.length > 0) {
+          console.log('CoinGecko success:', marketData.length, 'coins');
           return formatResponse(marketData, 'CoinGecko');
         }
       }
@@ -186,6 +183,13 @@ export async function GET() {
   } catch (error) {
     console.error('CoinGecko API error:', error);
   }
+
+  // Try Binance as fallback
+  const binanceResult = await tryBinanceAPI();
+  if (binanceResult) return binanceResult;
+
+  const resHeaders = new Headers();
+  resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
 
   return NextResponse.json({
     success: false,
