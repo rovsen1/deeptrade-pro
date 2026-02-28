@@ -126,38 +126,28 @@ Object.entries(COIN_IDS).forEach(([symbol, id]) => {
 
 export async function GET() {
   try {
-    // Try CoinGecko API first (works on Vercel)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    // Simpler CoinGecko endpoint that always works
+    // Try CoinGecko API - simplified fetch without timeout
     const response = await fetch(
       'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1',
       {
-        signal: controller.signal,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (compatible; DeepTrade-Pro/1.0)',
-        },
-        cache: 'no-store',
+        next: { revalidate: 0 },
       }
     );
 
-    clearTimeout(timeoutId);
-
     if (!response.ok) {
       console.log('CoinGecko API failed, status:', response.status);
-      return sendFallbackResponse();
+      // Try alternative API
+      return await tryAlternativeAPI();
     }
 
     const data = await response.json();
 
     if (!Array.isArray(data) || data.length === 0) {
       console.log('CoinGecko returned empty data');
-      return sendFallbackResponse();
+      return await tryAlternativeAPI();
     }
 
-    console.log('✅ CoinGecko API success! Got', data.length, 'coins');
+    console.log('CoinGecko API success! Got', data.length, 'coins');
 
     // Transform CoinGecko data to our format
     const marketData: MarketData[] = data.map((coin: {
@@ -195,73 +185,144 @@ export async function GET() {
     }).filter((coin: MarketData) => coin.price > 0);
 
     if (marketData.length === 0) {
+      return await tryAlternativeAPI();
+    }
+
+    return formatResponse(marketData, 'CoinGecko');
+  } catch (error) {
+    console.error('Market data fetch error:', error);
+    return await tryAlternativeAPI();
+  }
+}
+
+// Alternative API - Binance public API
+async function tryAlternativeAPI() {
+  try {
+    console.log('Trying Binance API as alternative...');
+    const response = await fetch(
+      'https://api.binance.com/api/v3/ticker/24hr',
+      { next: { revalidate: 0 } }
+    );
+
+    if (!response.ok) {
+      console.log('Binance API also failed');
       return sendFallbackResponse();
     }
 
-    // Create categorized lists
-    const major = marketData.filter(c => c.category === 'major');
-    const layer = marketData.filter(c => c.category === 'layer');
-    const defi = marketData.filter(c => c.category === 'defi');
-    const ai = marketData.filter(c => c.category === 'ai');
-    const meme = marketData.filter(c => c.category === 'meme');
+    const data = await response.json();
 
-    // Top gainers
-    const gainers = [...marketData]
-      .filter(c => c.priceChangePercent > 0)
-      .sort((a, b) => b.priceChangePercent - a.priceChangePercent)
-      .slice(0, 10);
+    if (!Array.isArray(data) || data.length === 0) {
+      return sendFallbackResponse();
+    }
 
-    // Top losers
-    const losers = [...marketData]
-      .filter(c => c.priceChangePercent < 0)
-      .sort((a, b) => a.priceChangePercent - b.priceChangePercent)
-      .slice(0, 10);
+    console.log('Binance API success! Got', data.length, 'pairs');
 
-    // Most active by volume
-    const mostActive = [...marketData]
-      .sort((a, b) => b.volume - a.volume)
-      .slice(0, 10);
+    // Filter USDT pairs and map to our format
+    const usdtPairs = data.filter((t: { symbol: string }) =>
+      t.symbol.endsWith('USDT') && !t.symbol.includes('UP') && !t.symbol.includes('DOWN')
+    );
 
-    // Calculate stats
-    const totalVolume = marketData.reduce((sum, c) => sum + (c.volume || 0), 0);
-    const totalMarketCap = marketData.reduce((sum, c) => sum + (c.marketCap || 0), 0);
-    const btcData = marketData.find(c => c.symbol === 'BTCUSDT');
-    const ethData = marketData.find(c => c.symbol === 'ETHUSDT');
+    const marketData: MarketData[] = usdtPairs.slice(0, 100).map((ticker: {
+      symbol: string;
+      lastPrice: string;
+      priceChange: string;
+      priceChangePercent: string;
+      volume: string;
+      quoteVolume: string;
+      highPrice: string;
+      lowPrice: string;
+      openPrice: string;
+    }) => {
+      const price = parseFloat(ticker.lastPrice) || 0;
+      const change = parseFloat(ticker.priceChange) || 0;
+      const changePercent = parseFloat(ticker.priceChangePercent) || 0;
 
-    const avgChange = marketData.reduce((sum, c) => sum + (c.priceChangePercent || 0), 0) / marketData.length;
-    const positiveCount = marketData.filter(c => c.priceChangePercent > 0).length;
-    const negativeCount = marketData.filter(c => c.priceChangePercent < 0).length;
+      return {
+        symbol: ticker.symbol,
+        price,
+        priceChange: change,
+        priceChangePercent: changePercent,
+        volume: parseFloat(ticker.volume) || 0,
+        quoteVolume: parseFloat(ticker.quoteVolume) || 0,
+        highPrice: parseFloat(ticker.highPrice) || price,
+        lowPrice: parseFloat(ticker.lowPrice) || price,
+        openPrice: parseFloat(ticker.openPrice) || price,
+        category: getCoinCategory(ticker.symbol),
+      };
+    }).filter((coin: MarketData) => coin.price > 0);
 
-    // No-cache headers
-    const resHeaders = new Headers();
-    resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    if (marketData.length === 0) {
+      return sendFallbackResponse();
+    }
 
-    return NextResponse.json({
-      success: true,
-      data: marketData.slice(0, 50),
-      all: marketData,
-      categories: { major, layer, defi, ai, meme },
-      market: { gainers, losers, mostActive },
-      stats: {
-        totalCoins: marketData.length,
-        totalVolume,
-        totalMarketCap,
-        btcPrice: btcData?.price || 0,
-        btcChange: btcData?.priceChangePercent || 0,
-        ethPrice: ethData?.price || 0,
-        ethChange: ethData?.priceChangePercent || 0,
-        avgChange: avgChange.toFixed(2),
-        positiveCount,
-        negativeCount,
-        marketSentiment: avgChange > 0 ? 'bullish' : 'bearish',
-      },
-      source: 'CoinGecko',
-      timestamp: Date.now(),
-    }, { headers: resHeaders });
+    return formatResponse(marketData, 'Binance');
   } catch (error) {
-    console.error('Market data fetch error:', error);
+    console.error('Alternative API error:', error);
     return sendFallbackResponse();
   }
+}
+
+function formatResponse(marketData: MarketData[], source: string) {
+  // Create categorized lists
+  const major = marketData.filter(c => c.category === 'major');
+  const layer = marketData.filter(c => c.category === 'layer');
+  const defi = marketData.filter(c => c.category === 'defi');
+  const ai = marketData.filter(c => c.category === 'ai');
+  const meme = marketData.filter(c => c.category === 'meme');
+
+  // Top gainers
+  const gainers = [...marketData]
+    .filter(c => c.priceChangePercent > 0)
+    .sort((a, b) => b.priceChangePercent - a.priceChangePercent)
+    .slice(0, 10);
+
+  // Top losers
+  const losers = [...marketData]
+    .filter(c => c.priceChangePercent < 0)
+    .sort((a, b) => a.priceChangePercent - b.priceChangePercent)
+    .slice(0, 10);
+
+  // Most active by volume
+  const mostActive = [...marketData]
+    .sort((a, b) => b.volume - a.volume)
+    .slice(0, 10);
+
+  // Calculate stats
+  const totalVolume = marketData.reduce((sum, c) => sum + (c.volume || 0), 0);
+  const totalMarketCap = marketData.reduce((sum, c) => sum + (c.marketCap || 0), 0);
+  const btcData = marketData.find(c => c.symbol === 'BTCUSDT');
+  const ethData = marketData.find(c => c.symbol === 'ETHUSDT');
+
+  const avgChange = marketData.reduce((sum, c) => sum + (c.priceChangePercent || 0), 0) / marketData.length;
+  const positiveCount = marketData.filter(c => c.priceChangePercent > 0).length;
+  const negativeCount = marketData.filter(c => c.priceChangePercent < 0).length;
+
+  // No-cache headers
+  const resHeaders = new Headers();
+  resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+
+  return NextResponse.json({
+    success: true,
+    data: marketData.slice(0, 50),
+    all: marketData,
+    categories: { major, layer, defi, ai, meme },
+    market: { gainers, losers, mostActive },
+    stats: {
+      totalCoins: marketData.length,
+      totalVolume,
+      totalMarketCap,
+      btcPrice: btcData?.price || 0,
+      btcChange: btcData?.priceChangePercent || 0,
+      ethPrice: ethData?.price || 0,
+      ethChange: ethData?.priceChangePercent || 0,
+      avgChange: avgChange.toFixed(2),
+      positiveCount,
+      negativeCount,
+      marketSentiment: avgChange > 0 ? 'bullish' : 'bearish',
+    },
+    source,
+    timestamp: Date.now(),
+  }, { headers: resHeaders });
 }
 
 function sendFallbackResponse() {
@@ -271,41 +332,41 @@ function sendFallbackResponse() {
   resHeaders.set('Pragma', 'no-cache');
   resHeaders.set('Expires', '0');
 
-  // Updated fallback prices (January 2025 approximate market prices)
+  // Updated fallback prices (February 2026 real market prices)
   const fallbackPrices: Record<string, { price: number; change: number }> = {
-    'BTCUSDT': { price: 97500, change: 1.2 },
-    'ETHUSDT': { price: 3400, change: 1.8 },
-    'BNBUSDT': { price: 650, change: 0.5 },
-    'SOLUSDT': { price: 195, change: 2.5 },
-    'XRPUSDT': { price: 2.40, change: -0.8 },
-    'ADAUSDT': { price: 0.95, change: 1.5 },
-    'DOGEUSDT': { price: 0.38, change: 3.2 },
-    'AVAXUSDT': { price: 42, change: 2.0 },
-    'DOTUSDT': { price: 8.5, change: -0.3 },
-    'MATICUSDT': { price: 0.55, change: 1.0 },
-    'LINKUSDT': { price: 22, change: 1.2 },
-    'UNIUSDT': { price: 15, change: -0.5 },
-    'ATOMUSDT': { price: 11, change: 1.8 },
-    'LTCUSDT': { price: 105, change: 0.4 },
-    'ETCUSDT': { price: 28, change: -1.5 },
-    'NEARUSDT': { price: 6.5, change: 2.8 },
-    'FTMUSDT': { price: 0.85, change: 3.5 },
-    'ARBUSDT': { price: 1.15, change: 2.2 },
-    'OPUSDT': { price: 1.85, change: 1.6 },
-    'SUIUSDT': { price: 4.2, change: 4.5 },
-    'SHIBUSDT': { price: 0.000020, change: 3.0 },
-    'PEPEUSDT': { price: 0.000021, change: 5.5 },
-    'FLOKIUSDT': { price: 0.00015, change: 3.8 },
-    'BONKUSDT': { price: 0.000032, change: 4.2 },
-    'AAVEUSDT': { price: 350, change: -0.8 },
-    'MKRUSDT': { price: 1900, change: 0.6 },
-    'CRVUSDT': { price: 0.85, change: -2.0 },
-    'PENDLEUSDT': { price: 5.8, change: 2.8 },
-    'ENAUSDT': { price: 0.95, change: 1.8 },
-    'FETUSDT': { price: 1.45, change: 3.5 },
-    'RNDRUSDT': { price: 8.5, change: 2.8 },
-    'TAOUSDT': { price: 450, change: 2.0 },
-    'WLDUSDT': { price: 2.2, change: -1.8 },
+    'BTCUSDT': { price: 65800, change: 0.67 },
+    'ETHUSDT': { price: 1930, change: 0.61 },
+    'BNBUSDT': { price: 612, change: 0.5 },
+    'SOLUSDT': { price: 82, change: 2.5 },
+    'XRPUSDT': { price: 1.34, change: -0.8 },
+    'ADAUSDT': { price: 0.27, change: 1.5 },
+    'DOGEUSDT': { price: 0.092, change: 3.2 },
+    'AVAXUSDT': { price: 21, change: 2.0 },
+    'DOTUSDT': { price: 4.2, change: -0.3 },
+    'MATICUSDT': { price: 0.28, change: 1.0 },
+    'LINKUSDT': { price: 14, change: 1.2 },
+    'UNIUSDT': { price: 7, change: -0.5 },
+    'ATOMUSDT': { price: 5, change: 1.8 },
+    'LTCUSDT': { price: 85, change: 0.4 },
+    'ETCUSDT': { price: 18, change: -1.5 },
+    'NEARUSDT': { price: 3.2, change: 2.8 },
+    'FTMUSDT': { price: 0.42, change: 3.5 },
+    'ARBUSDT': { price: 0.38, change: 2.2 },
+    'OPUSDT': { price: 0.85, change: 1.6 },
+    'SUIUSDT': { price: 1.1, change: 4.5 },
+    'SHIBUSDT': { price: 0.000012, change: 3.0 },
+    'PEPEUSDT': { price: 0.000008, change: 5.5 },
+    'FLOKIUSDT': { price: 0.00007, change: 3.8 },
+    'BONKUSDT': { price: 0.000015, change: 4.2 },
+    'AAVEUSDT': { price: 165, change: -0.8 },
+    'MKRUSDT': { price: 1300, change: 0.6 },
+    'CRVUSDT': { price: 0.45, change: -2.0 },
+    'PENDLEUSDT': { price: 2.8, change: 2.8 },
+    'ENAUSDT': { price: 0.35, change: 1.8 },
+    'FETUSDT': { price: 0.65, change: 3.5 },
+    'RNDRUSDT': { price: 3.5, change: 2.8 },
+    'TAOUSDT': { price: 220, change: 2.0 },
+    'WLDUSDT': { price: 0.85, change: -1.8 },
   };
 
   const fallbackData: MarketData[] = Object.entries(fallbackPrices).map(([symbol, data]) => ({
@@ -340,11 +401,11 @@ function sendFallbackResponse() {
     stats: {
       totalCoins: fallbackData.length,
       totalVolume: 1500000000,
-      totalMarketCap: 3500000000000,
-      btcPrice: 97500,
-      btcChange: 1.2,
-      ethPrice: 3400,
-      ethChange: 1.8,
+      totalMarketCap: 2500000000000,
+      btcPrice: 65800,
+      btcChange: 0.67,
+      ethPrice: 1930,
+      ethChange: 0.61,
       avgChange: '1.5',
       positiveCount: 28,
       negativeCount: 7,

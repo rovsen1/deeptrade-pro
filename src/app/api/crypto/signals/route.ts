@@ -597,18 +597,18 @@ export async function GET(request: NextRequest) {
       }
       
       if (!klines || klines.closes.length < 50) {
-        // Use realistic fallback based on current market (January 2025)
+        // Use realistic fallback based on current market (February 2026)
         const realPrices: Record<string, number> = {
-          'BTCUSDT': 97500,
-          'ETHUSDT': 3400,
-          'BNBUSDT': 650,
-          'SOLUSDT': 195,
-          'XRPUSDT': 2.40,
-          'ADAUSDT': 0.95,
-          'DOGEUSDT': 0.38,
-          'AVAXUSDT': 42,
-          'DOTUSDT': 8.5,
-          'LINKUSDT': 22,
+          'BTCUSDT': 65800,
+          'ETHUSDT': 1930,
+          'BNBUSDT': 612,
+          'SOLUSDT': 82,
+          'XRPUSDT': 1.34,
+          'ADAUSDT': 0.27,
+          'DOGEUSDT': 0.092,
+          'AVAXUSDT': 21,
+          'DOTUSDT': 4.2,
+          'LINKUSDT': 14,
         };
         
         const basePrice = realPrices[symbol] || 100;
@@ -757,9 +757,9 @@ export async function GET(request: NextRequest) {
           { name: 'ConfluenceMaster', signal, confidence: Math.max(0, confidence - 10), winrate: 49.02, reasons: ['Analiz'] },
           { name: 'MACDMomentum', signal: 'BEKLE', confidence: 25, winrate: 43.79, reasons: ['Net değil'] },
         ],
-        price: 97500,
-        indicators: { rsi: 50, ema50: 96500, ema200: 92000, atr: 2500, volumeRatio: 1.0, superTrend: 'nötr', obvTrend: 'yükseliş', ichimokuCloud: 'üstünde', adx: 25 },
-        levels: { support: 95500, resistance: 99500 },
+        price: 65800,
+        indicators: { rsi: 50, ema50: 65000, ema200: 62000, atr: 1500, volumeRatio: 1.0, superTrend: 'nötr', obvTrend: 'yükseliş', ichimokuCloud: 'üstünde', adx: 25 },
+        levels: { support: 64000, resistance: 68000 },
         note: 'Fallback signal',
       };
     });
