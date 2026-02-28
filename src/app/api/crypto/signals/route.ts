@@ -560,64 +560,74 @@ async function fetchBinanceKlines(symbol: string, interval: string): Promise<{ c
   return null;
 }
 
+// Get current price from Binance ticker
+async function getBinancePrice(symbol: string): Promise<number | null> {
+  try {
+    const response = await fetch(
+      `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`,
+      { cache: 'no-store' }
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    return parseFloat(data.price) || null;
+  } catch {
+    return null;
+  }
+}
+
 // Main API Handler
 export async function GET(request: NextRequest) {
   // Force dynamic - no caching
   const resHeaders = new Headers();
-  resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  resHeaders.set('Pragma', 'no-cache');
-  resHeaders.set('Expires', '0');
+  resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  resHeaders.set('Access-Control-Allow-Origin', '*');
 
   try {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get('symbol') || 'BTCUSDT';
     const type = searchParams.get('type') || 'all';
 
-    const timeframes = type === 'all' 
+    const timeframes = type === 'all'
       ? ['5m', '15m', '1h', '4h', '1d']
-      : type === 'scalp' 
-        ? ['5m', '15m', '1h'] 
+      : type === 'scalp'
+        ? ['5m', '15m', '1h']
         : ['4h', '1d'];
 
-    const signals: any[] = [];
-    const coinId = COIN_IDS[symbol];
-    
-    // Try CoinGecko first
-    let ohlcv = null;
-    if (coinId) {
-      ohlcv = await fetchCoinGeckoOHLCV(coinId, 30);
+    // Get REAL current price from Binance FIRST
+    let currentPrice = await getBinancePrice(symbol);
+
+    // Fallback prices if Binance unavailable
+    if (!currentPrice) {
+      const fallbackPrices: Record<string, number> = {
+        'BTCUSDT': 66300,
+        'ETHUSDT': 1945,
+        'BNBUSDT': 612,
+        'SOLUSDT': 82,
+        'XRPUSDT': 1.35,
+        'ADAUSDT': 0.27,
+        'DOGEUSDT': 0.09,
+        'AVAXUSDT': 21,
+        'DOTUSDT': 4.2,
+        'LINKUSDT': 14,
+      };
+      currentPrice = fallbackPrices[symbol] || 100;
     }
-    
+
+    const signals: any[] = [];
+
+    // Get klines data for analysis (but use SAME price for all)
     for (const interval of timeframes) {
-      let klines = ohlcv;
-      
-      // If CoinGecko didn't work or for intraday, try Binance
+      let klines = await fetchBinanceKlines(symbol, interval);
+
       if (!klines || klines.closes.length < 50) {
-        klines = await fetchBinanceKlines(symbol, interval);
-      }
-      
-      if (!klines || klines.closes.length < 50) {
-        // Use realistic fallback based on current market (February 2026)
-        const realPrices: Record<string, number> = {
-          'BTCUSDT': 65800,
-          'ETHUSDT': 1930,
-          'BNBUSDT': 612,
-          'SOLUSDT': 82,
-          'XRPUSDT': 1.34,
-          'ADAUSDT': 0.27,
-          'DOGEUSDT': 0.092,
-          'AVAXUSDT': 21,
-          'DOTUSDT': 4.2,
-          'LINKUSDT': 14,
-        };
-        
-        const basePrice = realPrices[symbol] || 100;
+        // Generate synthetic data for technical analysis only
+        const basePrice = currentPrice!;
         const volatility = basePrice * 0.02;
         const syntheticCloses: number[] = [];
         const syntheticHighs: number[] = [];
         const syntheticLows: number[] = [];
         const syntheticVolumes: number[] = [];
-        
+
         let price = basePrice;
         for (let i = 0; i < 200; i++) {
           const change = (Math.random() - 0.5) * volatility;
@@ -625,24 +635,31 @@ export async function GET(request: NextRequest) {
           const close = price + change;
           const high = Math.max(open, close) + Math.random() * volatility * 0.3;
           const low = Math.min(open, close) - Math.random() * volatility * 0.3;
-          
+
           syntheticCloses.push(close);
           syntheticHighs.push(high);
           syntheticLows.push(low);
           syntheticVolumes.push(1000000);
           price = close;
         }
-        
+
+        // Set last price to ACTUAL current price
+        syntheticCloses[syntheticCloses.length - 1] = currentPrice!;
+
         klines = {
           closes: syntheticCloses,
           highs: syntheticHighs,
           lows: syntheticLows,
           volumes: syntheticVolumes,
         };
+      } else {
+        // Override last close with actual current price for consistency
+        klines.closes[klines.closes.length - 1] = currentPrice!;
       }
-      
+
       const { closes, highs, lows, volumes } = klines;
-      const price = closes[closes.length - 1];
+      // Use the SAME currentPrice for all signals (not klines close)
+      const price = currentPrice!;
       const atr = calculateATR(highs, lows, closes, 14);
       const superTrend = calculateSuperTrendArray(highs, lows, closes, 10, 3);
       const rsi = calculateRSI(closes);
