@@ -562,22 +562,28 @@ async function fetchBinanceKlines(symbol: string, interval: string): Promise<{ c
 
 // Get current price from Binance ticker
 async function getBinancePrice(symbol: string): Promise<number | null> {
-  try {
-    const response = await fetch(
-      `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`,
-      { cache: 'no-store' }
-    );
-    if (!response.ok) return null;
-    const data = await response.json();
-    return parseFloat(data.price) || null;
-  } catch {
-    return null;
+  const endpoints = ['api.binance.com', 'api1.binance.com', 'api2.binance.com', 'api3.binance.com'];
+
+  for (const host of endpoints) {
+    try {
+      const response = await fetch(
+        `https://${host}/api/v3/ticker/price?symbol=${symbol}`,
+        { cache: 'no-store' }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const price = parseFloat(data.price);
+        if (price > 0) return price;
+      }
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 // Main API Handler
 export async function GET(request: NextRequest) {
-  // Force dynamic - no caching
   const resHeaders = new Headers();
   resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   resHeaders.set('Access-Control-Allow-Origin', '*');
@@ -593,35 +599,27 @@ export async function GET(request: NextRequest) {
         ? ['5m', '15m', '1h']
         : ['4h', '1d'];
 
-    // Get REAL current price from Binance FIRST
-    let currentPrice = await getBinancePrice(symbol);
+    // Get REAL current price from Binance FIRST - NO FALLBACK
+    const currentPrice = await getBinancePrice(symbol);
 
-    // Fallback prices if Binance unavailable
     if (!currentPrice) {
-      const fallbackPrices: Record<string, number> = {
-        'BTCUSDT': 66300,
-        'ETHUSDT': 1945,
-        'BNBUSDT': 612,
-        'SOLUSDT': 82,
-        'XRPUSDT': 1.35,
-        'ADAUSDT': 0.27,
-        'DOGEUSDT': 0.09,
-        'AVAXUSDT': 21,
-        'DOTUSDT': 4.2,
-        'LINKUSDT': 14,
-      };
-      currentPrice = fallbackPrices[symbol] || 100;
+      // If Binance doesn't have this coin, return error
+      return NextResponse.json({
+        success: false,
+        error: `${symbol} Binance'de bulunamadı`,
+        symbol,
+        signals: [],
+      }, { headers: resHeaders });
     }
 
     const signals: any[] = [];
 
-    // Get klines data for analysis (but use SAME price for all)
     for (const interval of timeframes) {
       let klines = await fetchBinanceKlines(symbol, interval);
 
       if (!klines || klines.closes.length < 50) {
-        // Generate synthetic data for technical analysis only
-        const basePrice = currentPrice!;
+        // Generate synthetic data for technical analysis
+        const basePrice = currentPrice;
         const volatility = basePrice * 0.02;
         const syntheticCloses: number[] = [];
         const syntheticHighs: number[] = [];
@@ -643,8 +641,7 @@ export async function GET(request: NextRequest) {
           price = close;
         }
 
-        // Set last price to ACTUAL current price
-        syntheticCloses[syntheticCloses.length - 1] = currentPrice!;
+        syntheticCloses[syntheticCloses.length - 1] = currentPrice;
 
         klines = {
           closes: syntheticCloses,
@@ -653,13 +650,11 @@ export async function GET(request: NextRequest) {
           volumes: syntheticVolumes,
         };
       } else {
-        // Override last close with actual current price for consistency
-        klines.closes[klines.closes.length - 1] = currentPrice!;
+        klines.closes[klines.closes.length - 1] = currentPrice;
       }
 
       const { closes, highs, lows, volumes } = klines;
-      // Use the SAME currentPrice for all signals (not klines close)
-      const price = currentPrice!;
+      const price = currentPrice;
       const atr = calculateATR(highs, lows, closes, 14);
       const superTrend = calculateSuperTrendArray(highs, lows, closes, 10, 3);
       const rsi = calculateRSI(closes);
@@ -746,51 +741,16 @@ export async function GET(request: NextRequest) {
         system: 'Multi-Strategy Signal Engine v4.2',
         strategies: ['SmartTrendFollower (58.3%)', 'StochRSIMeanReversion (53.9%)', 'ConfluenceMaster (49.0%)', 'MACDMomentum (43.8%)'],
         description: 'Backtest doğrulanmış stratejilerden sinyaller',
-        dataSource: 'CoinGecko + Binance',
+        dataSource: 'Binance',
+        currentPrice,
       },
     }, { headers: resHeaders });
   } catch (error) {
     console.error('Signal generation error:', error);
-    
-    // Return fallback signals
-    const fallbackSignals = ['5m', '15m', '1h', '4h', '1d'].map(tf => {
-      const random = Math.random();
-      let signal: 'AL' | 'SAT' | 'BEKLE' = random > 0.6 ? 'AL' : random > 0.3 ? 'SAT' : 'BEKLE';
-      let confidence = signal === 'BEKLE' ? 35 : 50 + Math.floor(Math.random() * 30);
-      
-      return {
-        symbol: 'BTCUSDT',
-        timeframe: tf,
-        type: ['5m', '15m', '1h'].includes(tf) ? 'scalp' : 'swing',
-        signal,
-        strength: confidence,
-        activeStrategy: 'SmartTrendFollower',
-        reasons: signal === 'AL' ? ['Trend yükseliş yönlü', 'Destek seviyesinden tepki'] :
-                 signal === 'SAT' ? ['Direnç seviyesine yaklaşıyor', 'Momentum zayıflıyor'] :
-                 ['Piyasa kararsız', 'Net trend bekleniyor'],
-        strategies: [
-          { name: 'SmartTrendFollower', signal, confidence, winrate: 58.33, reasons: ['Trend analizi'] },
-          { name: 'StochRSIMeanReversion', signal: 'BEKLE', confidence: 30, winrate: 53.94, reasons: ['Bekleniyor'] },
-          { name: 'ConfluenceMaster', signal, confidence: Math.max(0, confidence - 10), winrate: 49.02, reasons: ['Analiz'] },
-          { name: 'MACDMomentum', signal: 'BEKLE', confidence: 25, winrate: 43.79, reasons: ['Net değil'] },
-        ],
-        price: 65800,
-        indicators: { rsi: 50, ema50: 65000, ema200: 62000, atr: 1500, volumeRatio: 1.0, superTrend: 'nötr', obvTrend: 'yükseliş', ichimokuCloud: 'üstünde', adx: 25 },
-        levels: { support: 64000, resistance: 68000 },
-        note: 'Fallback signal',
-      };
-    });
-    
     return NextResponse.json({
-      success: true,
-      symbol: 'BTCUSDT',
-      signals: fallbackSignals,
-      timestamp: Date.now(),
-      info: {
-        system: 'Multi-Strategy Signal Engine v4.2 (Fallback)',
-        strategies: ['SmartTrendFollower (58.3%)', 'StochRSIMeanReversion (53.9%)'],
-        description: 'Fallback signals - API temporarily unavailable',
-      },
+      success: false,
+      error: 'Sinyal oluşturulamadı',
+      signals: [],
     }, { headers: resHeaders });
   }
 }

@@ -187,7 +187,11 @@ export async function GET() {
     console.error('CoinGecko API error:', error);
   }
 
-  return sendFallbackResponse();
+  return NextResponse.json({
+    success: false,
+    error: 'Piyasa verileri alınamadı - lütfen sayfayı yenileyin',
+    data: [],
+  }, { headers: resHeaders });
 }
 
 // Binance API - Primary source for real prices
@@ -335,97 +339,5 @@ function formatResponse(marketData: MarketData[], source: string) {
     },
     source,
     timestamp: Date.now(),
-  }, { headers: resHeaders });
-}
-
-function sendFallbackResponse() {
-  // No-cache headers
-  const resHeaders = new Headers();
-  resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  resHeaders.set('Pragma', 'no-cache');
-  resHeaders.set('Expires', '0');
-
-  // Updated fallback prices (February 2026 real market prices)
-  const fallbackPrices: Record<string, { price: number; change: number }> = {
-    'BTCUSDT': { price: 65800, change: 0.67 },
-    'ETHUSDT': { price: 1930, change: 0.61 },
-    'BNBUSDT': { price: 612, change: 0.5 },
-    'SOLUSDT': { price: 82, change: 2.5 },
-    'XRPUSDT': { price: 1.34, change: -0.8 },
-    'ADAUSDT': { price: 0.27, change: 1.5 },
-    'DOGEUSDT': { price: 0.092, change: 3.2 },
-    'AVAXUSDT': { price: 21, change: 2.0 },
-    'DOTUSDT': { price: 4.2, change: -0.3 },
-    'MATICUSDT': { price: 0.28, change: 1.0 },
-    'LINKUSDT': { price: 14, change: 1.2 },
-    'UNIUSDT': { price: 7, change: -0.5 },
-    'ATOMUSDT': { price: 5, change: 1.8 },
-    'LTCUSDT': { price: 85, change: 0.4 },
-    'ETCUSDT': { price: 18, change: -1.5 },
-    'NEARUSDT': { price: 3.2, change: 2.8 },
-    'FTMUSDT': { price: 0.42, change: 3.5 },
-    'ARBUSDT': { price: 0.38, change: 2.2 },
-    'OPUSDT': { price: 0.85, change: 1.6 },
-    'SUIUSDT': { price: 1.1, change: 4.5 },
-    'SHIBUSDT': { price: 0.000012, change: 3.0 },
-    'PEPEUSDT': { price: 0.000008, change: 5.5 },
-    'FLOKIUSDT': { price: 0.00007, change: 3.8 },
-    'BONKUSDT': { price: 0.000015, change: 4.2 },
-    'AAVEUSDT': { price: 165, change: -0.8 },
-    'MKRUSDT': { price: 1300, change: 0.6 },
-    'CRVUSDT': { price: 0.45, change: -2.0 },
-    'PENDLEUSDT': { price: 2.8, change: 2.8 },
-    'ENAUSDT': { price: 0.35, change: 1.8 },
-    'FETUSDT': { price: 0.65, change: 3.5 },
-    'RNDRUSDT': { price: 3.5, change: 2.8 },
-    'TAOUSDT': { price: 220, change: 2.0 },
-    'WLDUSDT': { price: 0.85, change: -1.8 },
-  };
-
-  const fallbackData: MarketData[] = Object.entries(fallbackPrices).map(([symbol, data]) => ({
-    symbol,
-    price: data.price,
-    priceChange: data.price * (data.change / 100),
-    priceChangePercent: data.change,
-    volume: 50000000,
-    quoteVolume: 100000000,
-    highPrice: data.price * 1.02,
-    lowPrice: data.price * 0.98,
-    openPrice: data.price / (1 + data.change / 100),
-    category: getCoinCategory(symbol),
-  }));
-
-  return NextResponse.json({
-    success: true,
-    data: fallbackData.slice(0, 25),
-    all: fallbackData,
-    categories: {
-      major: fallbackData.filter(c => c.category === 'major'),
-      layer: fallbackData.filter(c => c.category === 'layer'),
-      defi: fallbackData.filter(c => c.category === 'defi'),
-      ai: fallbackData.filter(c => c.category === 'ai'),
-      meme: fallbackData.filter(c => c.category === 'meme'),
-    },
-    market: {
-      gainers: fallbackData.filter(c => c.priceChangePercent > 0).sort((a, b) => b.priceChangePercent - a.priceChangePercent).slice(0, 10),
-      losers: fallbackData.filter(c => c.priceChangePercent < 0).sort((a, b) => a.priceChangePercent - b.priceChangePercent).slice(0, 10),
-      mostActive: fallbackData.slice(0, 10),
-    },
-    stats: {
-      totalCoins: fallbackData.length,
-      totalVolume: 1500000000,
-      totalMarketCap: 2500000000000,
-      btcPrice: 65800,
-      btcChange: 0.67,
-      ethPrice: 1930,
-      ethChange: 0.61,
-      avgChange: '1.5',
-      positiveCount: 28,
-      negativeCount: 7,
-      marketSentiment: 'bullish',
-    },
-    source: 'Fallback (API temporarily unavailable)',
-    timestamp: Date.now(),
-    note: 'Using fallback prices - CoinGecko API temporarily unavailable',
   }, { headers: resHeaders });
 }
