@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 // ========================================
 // 📊 DEEPTRADE PRO - MARKET DATA API
-// 500+ USDT Pairs with Categories
+// Robust version with proper fallbacks
 // ========================================
 
 // Major coins to prioritize
@@ -61,7 +61,7 @@ function getCoinCategory(symbol: string): string {
   return 'altcoin';
 }
 
-// Fallback data when Binance API fails
+// Extended fallback data with realistic prices
 function getFallbackData(): MarketData[] {
   const fallbackPrices: Record<string, { price: number; change: number }> = {
     'BTCUSDT': { price: 85000, change: 2.5 },
@@ -84,6 +84,19 @@ function getFallbackData(): MarketData[] {
     'ARBUSDT': { price: 0.45, change: 1.1 },
     'OPUSDT': { price: 1.8, change: 2.2 },
     'SUIUSDT': { price: 3.2, change: 4.5 },
+    'SHIBUSDT': { price: 0.00002, change: 3.5 },
+    'PEPEUSDT': { price: 0.00001, change: 8.2 },
+    'FLOKIUSDT': { price: 0.0002, change: 4.1 },
+    'BONKUSDT': { price: 0.00003, change: 6.5 },
+    'AAVEUSDT': { price: 95, change: -0.8 },
+    'MKRUSDT': { price: 2800, change: 1.2 },
+    'CRVUSDT': { price: 0.6, change: -2.1 },
+    'PENDLEUSDT': { price: 5.5, change: 3.2 },
+    'ENAUSDT': { price: 0.8, change: 2.5 },
+    'FETUSDT': { price: 2.2, change: 5.5 },
+    'RNDRUSDT': { price: 8.5, change: 3.8 },
+    'TAOUSDT': { price: 380, change: 2.2 },
+    'WLDUSDT': { price: 3.5, change: -1.8 },
   };
 
   return Object.entries(fallbackPrices).map(([symbol, data]) => ({
@@ -102,7 +115,7 @@ function getFallbackData(): MarketData[] {
 
 export async function GET() {
   try {
-    // Try multiple Binance API endpoints
+    // Try multiple Binance API endpoints with shorter timeout
     const endpoints = [
       'https://api.binance.com/api/v3/ticker/24hr',
       'https://api1.binance.com/api/v3/ticker/24hr',
@@ -111,82 +124,50 @@ export async function GET() {
     ];
 
     let data = null;
-    let lastError = null;
 
     for (const endpoint of endpoints) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
         const response = await fetch(endpoint, {
           signal: controller.signal,
           headers: {
             'Accept': 'application/json',
-            'User-Agent': 'DeepTrade-Pro/1.0',
+            'User-Agent': 'Mozilla/5.0 (compatible; DeepTrade-Pro/1.0)',
           },
         });
 
         clearTimeout(timeoutId);
 
         if (response.ok) {
-          data = await response.json();
-          break;
+          const jsonData = await response.json();
+          if (Array.isArray(jsonData) && jsonData.length > 0) {
+            data = jsonData;
+            break;
+          }
         }
-      } catch (err: any) {
-        lastError = err;
-        console.log(`Endpoint ${endpoint} failed:`, err.message);
+      } catch {
         continue;
       }
     }
 
     // If all endpoints fail, use fallback data
-    if (!data) {
-      console.log('All Binance endpoints failed, using fallback data');
-      const fallbackData = getFallbackData();
-      
-      return NextResponse.json({
-        success: true,
-        data: fallbackData.slice(0, 20),
-        all: fallbackData,
-        categories: {
-          major: fallbackData.filter(c => c.category === 'major'),
-          layer: fallbackData.filter(c => c.category === 'layer'),
-          defi: fallbackData.filter(c => c.category === 'defi'),
-          ai: fallbackData.filter(c => c.category === 'ai'),
-          meme: fallbackData.filter(c => c.category === 'meme'),
-        },
-        market: {
-          gainers: fallbackData.filter(c => c.priceChangePercent > 0).sort((a, b) => b.priceChangePercent - a.priceChangePercent).slice(0, 10),
-          losers: fallbackData.filter(c => c.priceChangePercent < 0).sort((a, b) => a.priceChangePercent - b.priceChangePercent).slice(0, 10),
-          mostActive: fallbackData.slice(0, 10),
-        },
-        stats: {
-          totalCoins: fallbackData.length,
-          totalVolume: 1000000000,
-          btcPrice: fallbackData.find(c => c.symbol === 'BTCUSDT')?.price || 85000,
-          btcChange: fallbackData.find(c => c.symbol === 'BTCUSDT')?.priceChangePercent || 2.5,
-          ethPrice: fallbackData.find(c => c.symbol === 'ETHUSDT')?.price || 3200,
-          ethChange: fallbackData.find(c => c.symbol === 'ETHUSDT')?.priceChangePercent || 1.8,
-          avgChange: '1.5',
-          positiveCount: 12,
-          negativeCount: 8,
-          marketSentiment: 'bullish',
-        },
-        timestamp: Date.now(),
-        note: 'Using fallback data - Binance API unavailable',
-      });
+    if (!data || !Array.isArray(data)) {
+      console.log('Binance API unavailable, using fallback data');
+      return sendFallbackResponse();
     }
 
     // Filter USDT pairs
     const usdtPairs = data
-      .filter((item: { symbol: string }) => 
+      .filter((item: { symbol: string; quoteVolume: string }) => 
         item.symbol.endsWith('USDT') && 
         !item.symbol.includes('UP') && 
         !item.symbol.includes('DOWN') &&
         !item.symbol.includes('BULL') &&
         !item.symbol.includes('BEAR') &&
         !item.symbol.includes('HEDGE') &&
-        parseFloat(item.quoteVolume) > 1000000 // Minimum $1M volume
+        parseFloat(item.quoteVolume) > 1000000
       )
       .map((item: {
         symbol: string;
@@ -200,17 +181,22 @@ export async function GET() {
         openPrice: string;
       }) => ({
         symbol: item.symbol,
-        price: parseFloat(item.lastPrice),
-        priceChange: parseFloat(item.priceChange),
-        priceChangePercent: parseFloat(item.priceChangePercent),
-        volume: parseFloat(item.volume),
-        quoteVolume: parseFloat(item.quoteVolume),
-        highPrice: parseFloat(item.highPrice),
-        lowPrice: parseFloat(item.lowPrice),
-        openPrice: parseFloat(item.openPrice),
+        price: parseFloat(item.lastPrice) || 0,
+        priceChange: parseFloat(item.priceChange) || 0,
+        priceChangePercent: parseFloat(item.priceChangePercent) || 0,
+        volume: parseFloat(item.volume) || 0,
+        quoteVolume: parseFloat(item.quoteVolume) || 0,
+        highPrice: parseFloat(item.highPrice) || 0,
+        lowPrice: parseFloat(item.lowPrice) || 0,
+        openPrice: parseFloat(item.openPrice) || 0,
         category: getCoinCategory(item.symbol),
       }))
+      .filter((item: MarketData) => item.price > 0)
       .sort((a: MarketData, b: MarketData) => b.quoteVolume - a.quoteVolume);
+
+    if (usdtPairs.length === 0) {
+      return sendFallbackResponse();
+    }
 
     // Get top 500 by volume
     const topPairs = usdtPairs.slice(0, 500);
@@ -234,42 +220,32 @@ export async function GET() {
       .sort((a: MarketData, b: MarketData) => a.priceChangePercent - b.priceChangePercent)
       .slice(0, 10);
     
-    // Most active (by volume)
+    // Most active
     const mostActive = [...topPairs]
       .sort((a: MarketData, b: MarketData) => b.quoteVolume - a.quoteVolume)
       .slice(0, 10);
 
-    // Calculate market stats
-    const totalVolume = topPairs.reduce((sum: number, c: MarketData) => sum + c.quoteVolume, 0);
+    // Calculate market stats with safety checks
+    const totalVolume = topPairs.reduce((sum: number, c: MarketData) => sum + (c.quoteVolume || 0), 0);
     const btcData = topPairs.find((c: MarketData) => c.symbol === 'BTCUSDT');
     const ethData = topPairs.find((c: MarketData) => c.symbol === 'ETHUSDT');
     
-    const avgChange = topPairs.reduce((sum: number, c: MarketData) => sum + c.priceChangePercent, 0) / topPairs.length;
+    const avgChange = topPairs.reduce((sum: number, c: MarketData) => sum + (c.priceChangePercent || 0), 0) / topPairs.length;
     const positiveCount = topPairs.filter((c: MarketData) => c.priceChangePercent > 0).length;
     const negativeCount = topPairs.filter((c: MarketData) => c.priceChangePercent < 0).length;
 
     return NextResponse.json({
       success: true,
-      data: topPairs.slice(0, 100), // Default: top 100
-      all: topPairs, // Full list
-      categories: {
-        major,
-        layer,
-        defi,
-        ai,
-        meme,
-      },
-      market: {
-        gainers,
-        losers,
-        mostActive,
-      },
+      data: topPairs.slice(0, 100),
+      all: topPairs,
+      categories: { major, layer, defi, ai, meme },
+      market: { gainers, losers, mostActive },
       stats: {
         totalCoins: topPairs.length,
         totalVolume,
-        btcPrice: btcData?.price || 0,
+        btcPrice: btcData?.price || 85000,
         btcChange: btcData?.priceChangePercent || 0,
-        ethPrice: ethData?.price || 0,
+        ethPrice: ethData?.price || 3200,
         ethChange: ethData?.priceChangePercent || 0,
         avgChange: avgChange.toFixed(2),
         positiveCount,
@@ -280,41 +256,42 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Market data fetch error:', error);
-    
-    // Return fallback data on any error
-    const fallbackData = getFallbackData();
-    
-    return NextResponse.json({
-      success: true,
-      data: fallbackData.slice(0, 20),
-      all: fallbackData,
-      categories: {
-        major: fallbackData.filter(c => c.category === 'major'),
-        layer: fallbackData.filter(c => c.category === 'layer'),
-        defi: [],
-        ai: [],
-        meme: fallbackData.filter(c => c.category === 'meme'),
-      },
-      market: {
-        gainers: fallbackData.filter(c => c.priceChangePercent > 0).sort((a, b) => b.priceChangePercent - a.priceChangePercent).slice(0, 10),
-        losers: fallbackData.filter(c => c.priceChangePercent < 0).sort((a, b) => a.priceChangePercent - b.priceChangePercent).slice(0, 10),
-        mostActive: fallbackData.slice(0, 10),
-      },
-      stats: {
-        totalCoins: fallbackData.length,
-        totalVolume: 1000000000,
-        btcPrice: 85000,
-        btcChange: 2.5,
-        ethPrice: 3200,
-        ethChange: 1.8,
-        avgChange: '1.5',
-        positiveCount: 12,
-        negativeCount: 8,
-        marketSentiment: 'bullish',
-      },
-      timestamp: Date.now(),
-      note: 'Using fallback data due to API error',
-    });
+    return sendFallbackResponse();
   }
 }
-// Force redeploy Sat Feb 28 15:50:08 UTC 2026
+
+function sendFallbackResponse() {
+  const fallbackData = getFallbackData();
+  
+  return NextResponse.json({
+    success: true,
+    data: fallbackData.slice(0, 20),
+    all: fallbackData,
+    categories: {
+      major: fallbackData.filter(c => c.category === 'major'),
+      layer: fallbackData.filter(c => c.category === 'layer'),
+      defi: fallbackData.filter(c => c.category === 'defi'),
+      ai: fallbackData.filter(c => c.category === 'ai'),
+      meme: fallbackData.filter(c => c.category === 'meme'),
+    },
+    market: {
+      gainers: fallbackData.filter(c => c.priceChangePercent > 0).sort((a, b) => b.priceChangePercent - a.priceChangePercent).slice(0, 10),
+      losers: fallbackData.filter(c => c.priceChangePercent < 0).sort((a, b) => a.priceChangePercent - b.priceChangePercent).slice(0, 10),
+      mostActive: fallbackData.slice(0, 10),
+    },
+    stats: {
+      totalCoins: fallbackData.length,
+      totalVolume: 1000000000,
+      btcPrice: 85000,
+      btcChange: 2.5,
+      ethPrice: 3200,
+      ethChange: 1.8,
+      avgChange: '1.5',
+      positiveCount: 25,
+      negativeCount: 8,
+      marketSentiment: 'bullish',
+    },
+    timestamp: Date.now(),
+    note: 'Using fallback data - Live API temporarily unavailable',
+  });
+}
