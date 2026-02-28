@@ -687,23 +687,23 @@ function generateSyntheticKlines(symbol: string, basePrice: number, count: numbe
   return klines;
 }
 
-// Real prices for synthetic data
+// Real prices for synthetic data (January 2025)
 const REAL_PRICES: Record<string, number> = {
-  'BTCUSDT': 67000,
+  'BTCUSDT': 97500,
   'ETHUSDT': 3400,
-  'BNBUSDT': 580,
-  'SOLUSDT': 175,
-  'XRPUSDT': 0.52,
-  'ADAUSDT': 0.267,
-  'DOGEUSDT': 0.12,
-  'AVAXUSDT': 35,
-  'DOTUSDT': 6.5,
-  'LINKUSDT': 14,
-  'UNIUSDT': 8.5,
-  'ATOMUSDT': 8.2,
-  'MATICUSDT': 0.52,
-  'LTCUSDT': 82,
-  'ETCUSDT': 22,
+  'BNBUSDT': 650,
+  'SOLUSDT': 195,
+  'XRPUSDT': 2.40,
+  'ADAUSDT': 0.95,
+  'DOGEUSDT': 0.38,
+  'AVAXUSDT': 42,
+  'DOTUSDT': 8.5,
+  'LINKUSDT': 22,
+  'UNIUSDT': 15,
+  'ATOMUSDT': 11,
+  'MATICUSDT': 0.55,
+  'LTCUSDT': 105,
+  'ETCUSDT': 28,
 };
 
 // ========================================
