@@ -705,7 +705,7 @@ export async function GET(request: NextRequest) {
       for (const host of apiEndpoints) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
           
           const response = await fetch(
             `https://${host}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=200`,
@@ -713,7 +713,7 @@ export async function GET(request: NextRequest) {
               signal: controller.signal,
               headers: {
                 'Accept': 'application/json',
-                'User-Agent': 'DeepTrade-Pro/1.0',
+                'User-Agent': 'Mozilla/5.0 (compatible; DeepTrade-Pro/1.0)',
               },
             }
           );
@@ -721,15 +721,18 @@ export async function GET(request: NextRequest) {
           clearTimeout(timeoutId);
           
           if (response.ok) {
-            klines = await response.json();
-            break;
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+              klines = data;
+              break;
+            }
           }
         } catch (err) {
           continue;
         }
       }
 
-      if (!klines) {
+      if (!klines || !Array.isArray(klines) || klines.length === 0) {
         // Use fallback data
         const fallbackSignal = generateFallbackSignal(symbol, interval);
         signals.push(fallbackSignal);
