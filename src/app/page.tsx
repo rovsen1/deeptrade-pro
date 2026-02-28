@@ -302,17 +302,74 @@ export default function CryptoDashboard() {
     });
   }, [marketData, profile.alarms, profile.notificationsEnabled, profile.telegramBotToken, profile.telegramChatId]);
 
-  // Fetch functions
+  // Fetch functions - DIRECT Binance API
   const fetchMarketData = useCallback(async () => {
     try {
-      const response = await fetch('/api/crypto/market');
-      const data = await response.json();
-      if (data.success) {
-        setMarketData(data.data);
-        setError(null);
+      // Try Binance API directly from client (bypasses Vercel server issues)
+      const response = await fetch('https://api.binance.com/api/v3/ticker/24hr', {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        // Fallback to our API
+        const fallbackResponse = await fetch('/api/crypto/market');
+        const fallbackData = await fallbackResponse.json();
+        if (fallbackData.success) {
+          setMarketData(fallbackData.data);
+          setError(null);
+        }
+        return;
       }
+
+      const rawData = await response.json();
+
+      // Filter and transform Binance data
+      const filteredData = rawData
+        .filter((t: { symbol: string }) =>
+          t.symbol.endsWith('USDT') &&
+          !t.symbol.includes('UP') &&
+          !t.symbol.includes('DOWN') &&
+          !t.symbol.includes('BEAR') &&
+          !t.symbol.includes('BULL') &&
+          !t.symbol.includes('HEDGE')
+        )
+        .map((ticker: {
+          symbol: string;
+          lastPrice: string;
+          priceChange: string;
+          priceChangePercent: string;
+          volume: string;
+          quoteVolume: string;
+          highPrice: string;
+          lowPrice: string;
+          openPrice: string;
+        }) => ({
+          symbol: ticker.symbol,
+          price: parseFloat(ticker.lastPrice) || 0,
+          priceChange: parseFloat(ticker.priceChange) || 0,
+          priceChangePercent: parseFloat(ticker.priceChangePercent) || 0,
+          volume: parseFloat(ticker.volume) || 0,
+          quoteVolume: parseFloat(ticker.quoteVolume) || 0,
+          highPrice: parseFloat(ticker.highPrice) || 0,
+          lowPrice: parseFloat(ticker.lowPrice) || 0,
+          openPrice: parseFloat(ticker.openPrice) || 0,
+        }))
+        .filter((coin: MarketData) => coin.price > 0);
+
+      setMarketData(filteredData);
+      setError(null);
     } catch {
-      setError('Piyasa verileri alınamadı');
+      // Fallback to our API
+      try {
+        const response = await fetch('/api/crypto/market');
+        const data = await response.json();
+        if (data.success) {
+          setMarketData(data.data);
+          setError(null);
+        }
+      } catch {
+        setError('Piyasa verileri alınamadı');
+      }
     }
   }, []);
 
